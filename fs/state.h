@@ -42,20 +42,18 @@ typedef enum { FREE = 0, TAKEN = 1 } allocation_state_t;
 typedef struct {
     int of_inumber;
     size_t of_offset;
+    pthread_mutex_t lock;
 } open_file_entry_t;
 
 //Os problemas devem ser do ALWAYS_ASSERT
 /*
-0 - esse é o init
-1 - esse é o do destroy / frees
-2 - esse o unlink, mexer na memoria
-3 - impedir tfs close do ficheiro (problemas)
-
-13 - esse é se for possivel eliminar diretorias (com problemas)
+0 - init
+1 - destroy
+2 - delete inode
+3 - tfs close
+4 - fclose
 */
-static pthread_mutex_t trinco_william_caralho[14] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,
-PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,
-PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER};
+//static pthread_mutex_t trinco_william_caralho[5] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER};
 
 int state_init(tfs_params);
 int state_destroy(void);

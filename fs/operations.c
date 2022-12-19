@@ -9,6 +9,8 @@
 
 #include "betterassert.h"
 
+static pthread_mutex_t open_lock;
+
 tfs_params tfs_default_params() {
     tfs_params params = {
         .max_inode_count = 64,
@@ -21,7 +23,6 @@ tfs_params tfs_default_params() {
 
 int tfs_init(tfs_params const *params_ptr) {
     tfs_params params;
-    pthread_mutex_lock(&trinco_william_caralho[0]);
     if (params_ptr != NULL) {
         params = *params_ptr;
     } else {
@@ -29,26 +30,24 @@ int tfs_init(tfs_params const *params_ptr) {
     }
 
     if (state_init(params) != 0) {
-        pthread_mutex_unlock(&trinco_william_caralho[0]);
         return -1;
     }
-    pthread_mutex_unlock(&trinco_william_caralho[0]);
+
+    pthread_mutex_init(&open_lock, NULL);
+    
     // create root inode
     int root = inode_create(T_DIRECTORY);
     if (root != ROOT_DIR_INUM) {
         return -1;
     }
-
     return 0;
 }
 
 int tfs_destroy() {
-    pthread_mutex_lock(&trinco_william_caralho[1]);
     if (state_destroy() != 0) {
-        pthread_mutex_unlock(&trinco_william_caralho[1]);
         return -1;
     }
-    pthread_mutex_unlock(&trinco_william_caralho[1]);
+    pthread_mutex_destroy(&open_lock);
     return 0;
 }
 
@@ -88,11 +87,14 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
     ALWAYS_ASSERT(root_dir_inode != NULL,
                   "tfs_open: root dir inode must exist");
     
-    //pthread_mutex_lock(&trinco_william_caralho[2]);
+    pthread_mutex_lock(&open_lock);
     int inum = tfs_lookup(name, root_dir_inode);
     size_t offset;
-
+    
     if (inum >= 0) {
+        
+        pthread_mutex_unlock(&open_lock);
+
         // The file already exists
         inode_t *inode = inode_get(inum);
         ALWAYS_ASSERT(inode != NULL,
@@ -114,24 +116,25 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
     } else if (mode & TFS_O_CREAT) {
         // The file does not exist; the mode specified that it should be created
         // Create inode
+        
         inum = inode_create(T_FILE);
         if (inum == -1) {
-            //pthread_mutex_unlock(&trinco_william_caralho[2]);
+            pthread_mutex_unlock(&open_lock);
             return -1; // no space in inode table
         }
 
         // Add entry in the root directory
         if (add_dir_entry(root_dir_inode, name + 1, inum) == -1) {
+            pthread_mutex_unlock(&open_lock);
             inode_delete(inum);
-            //pthread_mutex_unlock(&trinco_william_caralho[2]);
             return -1; // no space in directory
         }
-
+        pthread_mutex_unlock(&open_lock);
         offset = 0;
     } else {
-        //pthread_mutex_unlock(&trinco_william_caralho[2]);
+        pthread_mutex_unlock(&open_lock);
         return -1;
-    }
+    }    
 
     // Finally, add entry to the open file table and return the corresponding
     // handle
@@ -147,17 +150,18 @@ int tfs_sym_link(char const *target, char const *link_name) {
     if (!valid_pathname(link_name)) {
         return -1;
     }
-
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
     ALWAYS_ASSERT(root_dir_inode != NULL,
                   "tfs_sym_link: root dir inode must exist");
     
-    if(tfs_lookup(target, root_dir_inode) == -1)
+    if(tfs_lookup(target, root_dir_inode) == -1) {
         return -1;
+    }
 
     // Add entry in the root directory
-    if (add_sym_link(root_dir_inode, link_name + 1, target) == -1)
+    if (add_sym_link(root_dir_inode, link_name + 1, target) == -1) {
         return -1; // no space in directory
+    }
 
     return 0;
 }
@@ -167,18 +171,19 @@ int tfs_link(char const *target, char const *link_name) {
     if (!valid_pathname(link_name)) {
         return -1;
     }
-
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
     ALWAYS_ASSERT(root_dir_inode != NULL,
                   "tfs_link: root dir inode must exist");
     
     int inum;
-    if ((inum = find_hard_link(root_dir_inode, target + 1)) == -2)
+    if ((inum = find_hard_link(root_dir_inode, target + 1)) == -2) {
         return -1;
+    }
 
     // Add entry in the root directory
-    if (add_dir_entry(root_dir_inode, link_name + 1, inum) == -1)
+    if (add_dir_entry(root_dir_inode, link_name + 1, inum) == -1) {
         return -1; // no space in directory
+    }
 
     return 0;
 }
@@ -195,15 +200,19 @@ int tfs_close(int fhandle) {
 }
 
 ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
-    //pthread_mutex_lock(&trinco_william_caralho[3]);
+    
     open_file_entry_t *file = get_open_file_entry(fhandle);
     if (file == NULL) {
         return -1;
     }
 
+    //pthread_mutex_lock(&file->lock);
+
     //  From the open file table entry, we get the inode
+    
     inode_t *inode = inode_get(file->of_inumber);
     ALWAYS_ASSERT(inode != NULL, "tfs_write: inode of open file deleted");
+    //rwl_wrlock(&inode_lock[inumber]);
 
     // Determine how many bytes to write
     size_t block_size = state_block_size();
@@ -234,17 +243,18 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
             inode->i_size = file->of_offset;
         }
     }
-    //pthread_mutex_unlock(&trinco_william_caralho[3]);
     return (ssize_t)to_write;
 }
 
 ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
+    
     open_file_entry_t *file = get_open_file_entry(fhandle);
     if (file == NULL) {
         return -1;
     }
 
     // From the open file table entry, we get the inode
+    
     inode_t const *inode = inode_get(file->of_inumber);
     ALWAYS_ASSERT(inode != NULL, "tfs_read: inode of open file deleted");
 
@@ -263,7 +273,6 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
         // The offset associated with the file handle is incremented accordingly
         file->of_offset += to_read;
     }
-
     return (ssize_t)to_read;
 }
 
@@ -272,32 +281,37 @@ int tfs_unlink(char const *target) {
     if (!valid_pathname(target)) {
         return -1;
     }
-
+    
     inode_t *root_dir_inode = inode_get(ROOT_DIR_INUM);
     ALWAYS_ASSERT(root_dir_inode != NULL,
                   "tfs_unlink: root dir inode must exist");
-    int inum = tfs_lookup(target, root_dir_inode);
 
-    if (clear_dir_entry(root_dir_inode, target + 1) == -1)
+    
+    int inum = find_hard_link(root_dir_inode, target + 1);
+    if (clear_dir_entry(root_dir_inode, target + 1) == -1) {
         return -1;
-    if (inum != -1)
+    }
+    if (inum >= 0) {
         inode_delete(inum);
+    }
+    
     return 0;
 }
 
 int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     FILE *source_path_file = fopen(source_path, "r");
-    if (source_path_file == NULL)
+    if (source_path_file == NULL) {
         return -1;
+    }
+    
+    char buffer[128];
+    memset(buffer, 0, sizeof(buffer));
 
     int fhandle = tfs_open(dest_path, TFS_O_CREAT | TFS_O_TRUNC);
     if (fhandle == -1) {
         fclose(source_path_file);
         return -1;
     }
-
-    char buffer[128];
-    memset(buffer, 0, sizeof(buffer));
 
     size_t bytes_read;
     while ((bytes_read = fread(buffer, sizeof(char), sizeof(buffer), source_path_file)) > 0) {

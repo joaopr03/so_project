@@ -11,7 +11,7 @@ int main() {
         "Texto de ficheiro de teste. Teste TecnicoFS3. Texto de ficheiro de teste. Teste TecnicoFS33."
         "Texto de ficheiro de teste. Teste TecnicoFS4. Texto de ficheiro de teste. Teste TecnicoFS44."
         "Texto de ficheiro de teste. Teste TecnicoFS5. Texto de ficheiro de teste. Teste TecnicoFS55."
-        "Texto de ficheiro de teste. Teste TecnicoFS6. Texto de ficheiro de teste. Teste TecnicoFS66."
+        "Texto de ficheiro de teste. Teste TecnicoFortnite6. Texto de ficheiro de teste. Teste TecnicoFS66."
         "Texto de ficheiro de teste. Teste TecnicoFS7. Texto de ficheiro de teste. Teste TecnicoFS77."
         "Texto de ficheiro de teste. Teste TecnicoFS8. Texto de ficheiro de teste. Teste TecnicoFS."
         "Texto de ficheiro de teste. Teste TecnicoFS9. Texto de ficheiro de teste. Teste TecnicoFS."
@@ -33,7 +33,7 @@ int main() {
     int f;
     ssize_t r;
 
-    //Test: file does not exist
+    //Test: file does not exist5
     f = tfs_copy_from_external_fs(path_src, path_copied_file1);
     assert(f != -1);
 
