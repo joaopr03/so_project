@@ -173,6 +173,7 @@ int state_destroy(void) {
     free(free_blocks);
     free(open_file_table);
     free(free_open_file_entries);
+    free(inode_lock);
 
     inode_table = NULL;
     freeinode_ts = NULL;
@@ -180,6 +181,7 @@ int state_destroy(void) {
     free_blocks = NULL;
     open_file_table = NULL;
     free_open_file_entries = NULL;
+    inode_lock = NULL;
 
     return 0;
 }
