@@ -136,24 +136,67 @@ void *client4() {
 void *client5() {
     printf("Client5 start\n");
 
-    // Client5 create soft link to file3 and verifies its content
+    char *str_ext_file =
+        "Texto de ficheiro de teste. Teste TecnicoFS1. Texto de ficheiro de teste. Teste TecnicoFS11."
+        "Texto de ficheiro de teste. Teste TecnicoFS2. Texto de ficheiro de teste. Teste TecnicoFS22."
+        "Texto de ficheiro de teste. Teste TecnicoFS3. Texto de ficheiro de teste. Teste TecnicoFS33."
+        "Texto de ficheiro de teste. Teste TecnicoFS4. Texto de ficheiro de teste. Teste TecnicoFS44."
+        "Texto de ficheiro de teste. Teste TecnicoFS5. Texto de ficheiro de teste. Teste TecnicoFS55."
+        "Texto de ficheiro de teste. Teste TecnicoFortnite6. Texto de ficheiro de teste. Teste TecnicoFS66."
+        "Texto de ficheiro de teste. Teste TecnicoFS7. Texto de ficheiro de teste. Teste TecnicoFS77."
+        "Texto de ficheiro de teste. Teste TecnicoFS8. Texto de ficheiro de teste. Teste TecnicoFS."
+        "Texto de ficheiro de teste. Teste TecnicoFS9. Texto de ficheiro de teste. Teste TecnicoFS."
+        "Texto de ficheiro de teste. Teste TecnicoFS0. Texto de ficheiro de teste. Teste TecnicoFS."
+        "Texto de ficheiro de teste. Teste TecnicoFS1. Texto de ficheiro de teste. Teste TecnicoFS.";
+    char *path_src = "tests/file_to_copy_from_test.txt";
+    ssize_t r;
+    int f;
+    char buffer[1020];
+    
+    FILE *file = fopen(path_src, "w");
+    fwrite(str_ext_file, sizeof(*str_ext_file), strlen(str_ext_file), file);
+    fclose(file);
+
+    // Create a file (file does not exist)
+    f = tfs_copy_from_external_fs(path_src, "/file19");
+    assert(f != -1);
+
+    f = tfs_open("/file19", TFS_O_CREAT);
+    assert(f != -1);
+
+    // Check tfs file content
+    r = tfs_read(f, buffer, sizeof(buffer) - 1);
+    assert(r == strlen(str_ext_file));
+    assert(!memcmp(buffer, str_ext_file, strlen(str_ext_file)));
+
+    
+    printf("Client5 end\n");
+    return NULL;
+}
+
+void *client6() {
+    printf("Client6 start\n");
+
+    // Client6 create soft link to file3 and verifies its content
     wait_file_create("/file3");
     assert(tfs_sym_link("/file3", "/softLink") != -1);
     assert_contents_ok("/softLink", "Why would Client1 create a file without text...");
 
-    // Client5 deletes file3 created by Client1
+    // Client6 deletes file3 created by Client1
     assert(tfs_unlink("/file3") != -1);
 
-    // Client5 tries to open and delete (by this order) files that don't exist
+    // Client6 tries to open and delete (by this order) files that don't exist
     assert(tfs_open("/softLink", 0) == -1);
     assert(tfs_unlink("/file3") == -1);    
     
-    printf("Client5 end\n");
+    printf("Client6 end\n");
     return NULL;
-} 
+}
+
+
 
 int main() {
-    pthread_t tid[5];
+    pthread_t tid[6];
 
     assert(tfs_init(NULL) != -1);
     
@@ -182,11 +225,17 @@ int main() {
         return -1;
     }
 
+    if (pthread_create(&tid[5], NULL, client6, NULL) != 0) {
+        fprintf(stderr, "failed to create client2 thread: %s\n", strerror(errno));
+        return -1;
+    }
+
     pthread_join(tid[0], NULL);
     pthread_join(tid[1], NULL);
     pthread_join(tid[2], NULL);
     pthread_join(tid[3], NULL);
     pthread_join(tid[4], NULL);
+    pthread_join(tid[5], NULL);
 
     assert(tfs_destroy() != -1);
 
