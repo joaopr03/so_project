@@ -10,7 +10,7 @@
 #include "betterassert.h"
 
 static pthread_mutex_t open_lock;
-static pthread_mutex_t close_lock;
+//static pthread_mutex_t close_lock;
 
 tfs_params tfs_default_params() {
     tfs_params params = {
@@ -194,11 +194,11 @@ int tfs_close(int fhandle) {
     if (file == NULL) {
         return -1; // invalid fd
     }
-    pthread_mutex_lock(&close_lock);
+    //pthread_mutex_lock(&close_lock);
 
     remove_from_open_file_table(fhandle);
 
-    pthread_mutex_unlock(&close_lock);
+    //pthread_mutex_unlock(&close_lock);
 
     return 0;
 }

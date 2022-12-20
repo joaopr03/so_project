@@ -107,6 +107,8 @@ int main() {
     // Unlink all hard links (expected delete inode, inode count == 0)
     assert(tfs_unlink(hard_link3) != -1);
     assert_contents_ok(hard_link3, empty_string);
+
+    assert(tfs_destroy() != -1);
     
     printf("Successful test.\n");
 

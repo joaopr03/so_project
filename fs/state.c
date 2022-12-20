@@ -147,7 +147,7 @@ int state_init(tfs_params params) {
     }
 
     pthread_mutex_init(&free_open_file_entries_lock, NULL);
-    //pthread_cond_init(&files_opened, NULL);
+    
     return 0;
 }
 
@@ -167,7 +167,6 @@ int state_destroy(void) {
         pthread_mutex_destroy(&open_file_table[i].lock);
     }
     pthread_mutex_destroy(&free_open_file_entries_lock);
-    //pthread_cond_destroy(&files_opened);
 
     free(inode_table);
     free(freeinode_ts);
@@ -315,10 +314,10 @@ void inode_delete(int inumber) {
     if (inode_table[inumber].i_size > 0) {
         data_block_free(inode_table[inumber].i_data_block);
     }
-
+    
+    freeinode_ts[inumber] = FREE;
     pthread_rwlock_unlock(&free_inode_lock);
     pthread_rwlock_unlock(&inode_lock[inumber]);
-    freeinode_ts[inumber] = FREE;
 }
 
 /**
@@ -356,6 +355,7 @@ int clear_dir_entry(inode_t *inode, char const *sub_name) {
     }
 
     // Locates the block containing the entries of the directory
+    pthread_rwlock_wrlock(&inode_lock[ROOT_DIR_INUM]);
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
     ALWAYS_ASSERT(dir_entry != NULL,
                   "clear_dir_entry: directory must have a data block");
@@ -366,9 +366,11 @@ int clear_dir_entry(inode_t *inode, char const *sub_name) {
                 inode_get(dir_entry[i].d_inumber)->i_nodes_number--;
             dir_entry[i].d_inumber = -1;
             memset(dir_entry[i].d_name, 0, MAX_FILE_NAME);
+            pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
             return 0;
         }
     }
+    pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
     return -1; // sub_name not found
 }
 
@@ -398,6 +400,7 @@ int add_dir_entry(inode_t *inode, char const *sub_name, int sub_inumber) {
     }
 
     // Locates the block containing the entries of the directory
+    pthread_rwlock_wrlock(&inode_lock[ROOT_DIR_INUM]);
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
     ALWAYS_ASSERT(dir_entry != NULL,
                   "add_dir_entry: directory must have a data block");
@@ -410,9 +413,11 @@ int add_dir_entry(inode_t *inode, char const *sub_name, int sub_inumber) {
 
             dir_entry[i].d_target_name[0] = '\0';
             inode_get(sub_inumber)->i_nodes_number++;
+            pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
             return 0;
         }
     }
+    pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
     return -1; // no space for entry
 }
 
@@ -427,6 +432,7 @@ int add_sym_link(inode_t *inode, char const *sub_name, char const *target) {
     }
 
     // Locates the block containing the entries of the directory
+    pthread_rwlock_wrlock(&inode_lock[ROOT_DIR_INUM]);
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
     ALWAYS_ASSERT(dir_entry != NULL,
                   "add_dir_entry: directory must have a data block");
@@ -439,10 +445,11 @@ int add_sym_link(inode_t *inode, char const *sub_name, char const *target) {
             
             strncpy(dir_entry[i].d_target_name, target, MAX_FILE_NAME - 1);
             dir_entry[i].d_name[MAX_FILE_NAME - 1] = '\0';
-
+            pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
             return 0;
         }
     }
+    pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
     return -1; // no space for entry
 }
 
@@ -469,6 +476,7 @@ int find_in_dir(inode_t const *inode, char const *sub_name) {
     }
 
     // Locates the block containing the entries of the directory
+    pthread_rwlock_rdlock(&inode_lock[ROOT_DIR_INUM]);
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
     ALWAYS_ASSERT(dir_entry != NULL,
                   "find_in_dir: directory inode must have a data block");
@@ -482,14 +490,13 @@ int find_in_dir(inode_t const *inode, char const *sub_name) {
             if ((sub_inumber = dir_entry[i].d_inumber) == -2) {
                 sub_inumber = find_in_dir(inode, dir_entry[i].d_target_name + 1);
             }
+            pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
             return sub_inumber;
         }
     }
+    pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
     return -1; // entry not found
 }
-
-
-
 
 int find_hard_link(inode_t const *inode, char const *sub_name) {
     ALWAYS_ASSERT(inode != NULL, "find_in_dir: inode must be non-NULL");
@@ -501,6 +508,7 @@ int find_hard_link(inode_t const *inode, char const *sub_name) {
     }
 
     // Locates the block containing the entries of the directory
+    pthread_rwlock_rdlock(&inode_lock[ROOT_DIR_INUM]);
     dir_entry_t *dir_entry = (dir_entry_t *)data_block_get(inode->i_data_block);
     ALWAYS_ASSERT(dir_entry != NULL,
                   "find_in_dir: directory inode must have a data block");
@@ -513,10 +521,11 @@ int find_hard_link(inode_t const *inode, char const *sub_name) {
             (strncmp(dir_entry[i].d_name, sub_name, MAX_FILE_NAME) == 0)) {
 
             int sub_inumber = dir_entry[i].d_inumber;
+            pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
             return sub_inumber;
         }
     }
-
+    pthread_rwlock_unlock(&inode_lock[ROOT_DIR_INUM]);
     return -1; // entry not found
 }
 
