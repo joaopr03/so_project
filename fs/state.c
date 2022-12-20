@@ -39,7 +39,6 @@ static pthread_rwlock_t *inode_lock;
 static pthread_rwlock_t free_inode_lock;
 static pthread_rwlock_t free_blocks_lock;
 static pthread_mutex_t free_open_file_entries_lock;
-//static pthread_cond_t files_opened;
 
 static inline bool valid_inumber(int inumber) {
     return inumber >= 0 && inumber < INODE_TABLE_SIZE;
@@ -574,8 +573,9 @@ void data_block_free(int block_number) {
                   "data_block_free: invalid block number");
 
     insert_delay(); // simulate storage access delay to free_blocks
-
+    pthread_rwlock_wrlock(&free_blocks_lock);
     free_blocks[block_number] = FREE;
+    pthread_rwlock_unlock(&free_blocks_lock);
 }
 
 /**

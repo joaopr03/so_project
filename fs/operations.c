@@ -10,7 +10,6 @@
 #include "betterassert.h"
 
 static pthread_mutex_t open_lock;
-//static pthread_mutex_t close_lock;
 
 tfs_params tfs_default_params() {
     tfs_params params = {
@@ -68,7 +67,6 @@ static bool valid_pathname(char const *name) {
  * Returns the inumber of the file, -1 if unsuccessful.
  */
 static int tfs_lookup(char const *name, inode_t const *root_inode) {
-    // TODO: assert that root_inode is the root directory
     if (!valid_pathname(name)) {
         return -1;
     }
@@ -177,7 +175,7 @@ int tfs_link(char const *target, char const *link_name) {
                   "tfs_link: root dir inode must exist");
     
     int inum;
-    if ((inum = find_hard_link(root_dir_inode, target + 1)) == -2) {
+    if ((inum = find_hard_link(root_dir_inode, target + 1)) == -2 || inum == -1) {
         return -1;
     }
 
@@ -194,11 +192,8 @@ int tfs_close(int fhandle) {
     if (file == NULL) {
         return -1; // invalid fd
     }
-    //pthread_mutex_lock(&close_lock);
 
     remove_from_open_file_table(fhandle);
-
-    //pthread_mutex_unlock(&close_lock);
 
     return 0;
 }

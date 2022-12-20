@@ -23,6 +23,8 @@ int main() {
     char *path_copied_file2 = "/teste1b";
     char *path_src = "tests/file_to_copy_from_test.txt";
     char buffer[1020];
+    ssize_t r;
+    int f;
 
     FILE *file = fopen(path_src, "w");
     fwrite(str_ext_file1, sizeof(*str_ext_file1), strlen(str_ext_file1), file);
@@ -30,21 +32,19 @@ int main() {
 
     assert(tfs_init(NULL) != -1);
 
-    int f;
-    ssize_t r;
-
-    //Test: file does not exist5
+    // Create a file (file does not exist)
     f = tfs_copy_from_external_fs(path_src, path_copied_file1);
     assert(f != -1);
 
     f = tfs_open(path_copied_file1, TFS_O_CREAT);
     assert(f != -1);
 
+    // Check tfs file content
     r = tfs_read(f, buffer, sizeof(buffer) - 1);
     assert(r == strlen(str_ext_file1));
     assert(!memcmp(buffer, str_ext_file1, strlen(str_ext_file1)));
 
-    //Test: replace existing file
+    // Create a new file with some content
     f = tfs_open(path_copied_file2, TFS_O_CREAT);
     assert(f != -1);
 
@@ -54,27 +54,31 @@ int main() {
     f = tfs_close(f);
     assert(f != -1);
 
+    // Replace file content (file already exists)
     f = tfs_copy_from_external_fs(path_src, path_copied_file2);
     assert(f != -1);
 
     f = tfs_open(path_copied_file2, TFS_O_CREAT);
     assert(f != -1);
 
+    // Check tfs file content
     r = tfs_read(f, buffer, sizeof(buffer) - 1);
     assert(r == strlen(str_ext_file1));
     assert(!memcmp(buffer, str_ext_file1, strlen(str_ext_file1)));
 
-    //Test: replace the file created
+
     file = fopen(path_src, "w");
     fwrite(str_ext_file2, sizeof(*str_ext_file2), strlen(str_ext_file2), file);
     fclose(file);
 
+    // Replace file content (file already exists) 
     f = tfs_copy_from_external_fs(path_src, path_copied_file1);
     assert(f != -1);
 
     f = tfs_open(path_copied_file1, TFS_O_CREAT);
     assert(f != -1);
 
+    // Check tfs file content
     r = tfs_read(f, buffer, sizeof(buffer) - 1);
     assert(r == strlen(str_ext_file2));
     assert(!memcmp(buffer, str_ext_file2, strlen(str_ext_file2)));
