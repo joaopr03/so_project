@@ -1,22 +1,25 @@
 #include "logging.h"
 #include "operations.h"
+#include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 enum {
-    CODE_PUBLISHER = 1,
-    CODE_SUBSCRIBER = 2,
-    CODE_BOX_CREATE = 3,
-    CODE_BOX_CREATE_R = 4,
-    CODE_BOX_REMOVE = 5,
-    CODE_BOX_REMOVE_R = 6,
-    CODE_BOX_LIST = 7,
-    CODE_BOX_LIST_R = 8,
-    CODE_PUB_MSG = 9
+    OP_CODE_PUBLISHER = 1,
+    OP_CODE_SUBSCRIBER = 2,
+    OP_CODE_BOX_CREATE = 3,
+    OP_CODE_BOX_CREATE_R = 4,
+    OP_CODE_BOX_REMOVE = 5,
+    OP_CODE_BOX_REMOVE_R = 6,
+    OP_CODE_BOX_LIST = 7,
+    OP_CODE_BOX_LIST_R = 8,
+    OP_CODE_PUB_MSG = 9
 };
 
 pthread_t threads;
@@ -88,8 +91,8 @@ int init_server() {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2 || argv[0] != "mbroker") {
-        fprintf(stdout, "ERROR %s ; argv[0] = \n", "mbroker: need more arguments\n", argv[0]);
+    if (argc < 3 || strcmp(argv[0], "mbroker")) {
+        fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "mbroker: need more arguments\n", argv[0]);
         return EXIT_SUCCESS;
     }
     register_pipe_name = argv[1];
@@ -138,7 +141,7 @@ int main(int argc, char **argv) {
         }
 
         ssize_t bytes_read;
-        char op_code;
+        uint8_t op_code;
         do {
             bytes_read = read(register_pipe, &op_code, sizeof(char));
         } while (bytes_read < 0 && errno == EINTR);
@@ -146,23 +149,23 @@ int main(int argc, char **argv) {
         // main listener loop
         while (bytes_read > 0) {
             switch (op_code) {
-            case CODE_PUBLISHER:
+            case OP_CODE_PUBLISHER:
                 break;
-            case CODE_SUBSCRIBER:
+            case OP_CODE_SUBSCRIBER:
                 break;
-            case CODE_BOX_CREATE:
+            case OP_CODE_BOX_CREATE:
                 break;
-            case CODE_BOX_CREATE_R:
+            case OP_CODE_BOX_CREATE_R:
                 break;
-            case CODE_BOX_REMOVE:
+            case OP_CODE_BOX_REMOVE:
                 break;
-            case CODE_BOX_REMOVE_R:
+            case OP_CODE_BOX_REMOVE_R:
                 break;
-            case CODE_BOX_LIST:
+            case OP_CODE_BOX_LIST:
                     break;
-            case CODE_BOX_LIST_R:
+            case OP_CODE_BOX_LIST_R:
                 break;
-            case CODE_PUB_MSG:
+            case OP_CODE_PUB_MSG:
                 break;
             default:
                 break;

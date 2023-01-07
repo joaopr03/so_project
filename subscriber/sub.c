@@ -1,9 +1,78 @@
 #include "logging.h"
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <signal.h>
+
+static char *register_pipe_name;
+static char *pipe_name;
+static char *box_name;
+
+static void sig_handler(int sig) {
+    if (sig == SIGINT) {
+        fprintf(stderr, "Caught SIGINT\n");
+        exit(EXIT_SUCCESS);
+    }
+}
+
+void create_register(char *buffer) {
+    int i = 0;
+    buffer[i++] = '2';
+    buffer[i++] = '|';
+    for (; i < 256 && *pipe_name != '\0'; i++) {
+        buffer[i] = *pipe_name++;
+    }
+    for (; i < 256; i++) {
+        buffer[i] = '\0';
+    }
+    buffer[i++] = '|';
+    for (; i < 289 && *box_name != '\0'; i++) {
+        buffer[i] = *box_name++;
+    }
+    for (; i < 289; i++) {
+        buffer[i] = '\0';
+    }
+}
 
 int main(int argc, char **argv) {
-    (void)argc;
+    if (argc < 4 || strcmp(argv[0], "sub")) {
+        fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "subscriber: need more arguments\n", argv[0]);
+        return -1;
+    }
+
+    signal(SIGINT, sig_handler); //iplement in process client instead of here
+    
+    register_pipe_name = argv[1];
+    pipe_name = argv[2];
+    box_name = argv[3];
+
+    int register_pipe = open(register_pipe_name, O_APPEND);
+    if (register_pipe < 0) {
+        if (errno == ENOENT)
+            return 0;
+        fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
+        return EXIT_FAILURE;
+    }
+    if (close(register_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+    ssize_t bytes_written;
+    char buffer[290];
+    create_register(buffer);
+    bytes_written = write(register_pipe, buffer, sizeof(char)*290);
+    if (bytes_written < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
+        return EXIT_FAILURE;
+    }
+
+    return 0;
+}
+/* (void)argc;
     (void)argv;
     fprintf(stderr, "usage: sub <register_pipe_name> <box_name>\n");
     WARN("unimplemented"); // TODO: implement
-    return -1;
-}
+    return -1; */
