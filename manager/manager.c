@@ -30,17 +30,17 @@ void create_register(char *buffer) {
         break;
     }
     buffer[i++] = '|';
-    for (; i < 256 && *pipe_name != '\0'; i++) {
+    for (; i < 257 && *pipe_name != '\0'; i++) {
         buffer[i] = *pipe_name++;
     }
-    for (; i < 256; i++) {
+    for (; i < 257; i++) {
         buffer[i] = '\0';
     }
     buffer[i++] = '|';
-    for (; i < 289 && *box_name != '\0'; i++) {
+    for (; i < 290 && *box_name != '\0'; i++) {
         buffer[i] = *box_name++;
     }
-    for (; i < 289; i++) {
+    for (; i < 290; i++) {
         buffer[i] = '\0';
     }
 }
@@ -65,7 +65,7 @@ void create_listing(char *buffer) {
 } */
 
 int main(int argc, char **argv) {
-    if (argc < 4 || strcmp(argv[0], "manager")) {
+    if (argc < 4) {// || strcmp(argv[0], "manager")) {
         fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "manager: need more arguments\n", argv[0]);
         return -1;
     }
@@ -97,35 +97,42 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    int register_pipe = open(register_pipe_name, O_APPEND);
+    int register_pipe = open(register_pipe_name, O_WRONLY);
     if (register_pipe < 0) {
         if (errno == ENOENT)
             return 0;
         fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
         return EXIT_FAILURE;
     }
-    if (close(register_pipe) < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-        return EXIT_FAILURE;
-    }
+    
     ssize_t bytes_written;
     char *buffer;
     switch (mode) {
-    case CODE_BOX_CREATE || CODE_BOX_REMOVE:
-        buffer = (char*) malloc(sizeof(char) * 290);
+    case CODE_BOX_CREATE: case CODE_BOX_REMOVE:
+        buffer = (char*) malloc(sizeof(char) * 291);
         create_register(buffer);
         bytes_written = write(register_pipe, buffer, sizeof(char)*290);
         break;
+    /* case CODE_BOX_CREATE:
+        buffer = (char*) malloc(sizeof(char) * 291);
+        create_register(buffer);
+        bytes_written = write(register_pipe, buffer, sizeof(char)*290);
+        break; */
     case CODE_BOX_LIST:
         buffer = (char*) malloc(sizeof(char) * 258);
         create_listing(buffer);
         bytes_written = write(register_pipe, buffer, sizeof(char)*258);
         break;
     default:
-        return -1;
+        return EXIT_FAILURE;
     }
     if (bytes_written < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+        return EXIT_FAILURE;
+    }
+
+    if (close(register_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
 

@@ -22,23 +22,23 @@ void create_register(char *buffer) {
     int i = 0;
     buffer[i++] = '2';
     buffer[i++] = '|';
-    for (; i < 256 && *pipe_name != '\0'; i++) {
+    for (; i < 257 && *pipe_name != '\0'; i++) {
         buffer[i] = *pipe_name++;
     }
-    for (; i < 256; i++) {
+    for (; i < 257; i++) {
         buffer[i] = '\0';
     }
     buffer[i++] = '|';
-    for (; i < 289 && *box_name != '\0'; i++) {
+    for (; i < 290 && *box_name != '\0'; i++) {
         buffer[i] = *box_name++;
     }
-    for (; i < 289; i++) {
+    for (; i < 290; i++) {
         buffer[i] = '\0';
     }
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4 || strcmp(argv[0], "sub")) {
+    if (argc < 4) {// || strcmp(argv[0], "sub")) {
         fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "subscriber: need more arguments\n", argv[0]);
         return -1;
     }
@@ -49,23 +49,25 @@ int main(int argc, char **argv) {
     pipe_name = argv[2];
     box_name = argv[3];
 
-    int register_pipe = open(register_pipe_name, O_APPEND);
+    char buffer[291];
+    create_register(buffer);
+
+    int register_pipe = open(register_pipe_name, O_WRONLY);
     if (register_pipe < 0) {
         if (errno == ENOENT)
             return 0;
         fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
         return EXIT_FAILURE;
     }
-    if (close(register_pipe) < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+    
+    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*290);
+    if (bytes_written < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return EXIT_FAILURE;
     }
-    ssize_t bytes_written;
-    char buffer[290];
-    create_register(buffer);
-    bytes_written = write(register_pipe, buffer, sizeof(char)*290);
-    if (bytes_written < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
+
+    if (close(register_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
 
