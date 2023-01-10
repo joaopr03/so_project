@@ -1,4 +1,5 @@
 #include "logging.h"
+#include "config.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -19,6 +20,8 @@ enum {
 
 void create_register(char *buffer) {
     int i = 0;
+    char *aux_pipe_name = pipe_name;
+    char *aux_box_name = box_name;
     switch (mode) {
     case CODE_BOX_CREATE:
         buffer[i++] = '3';
@@ -26,34 +29,30 @@ void create_register(char *buffer) {
     case CODE_BOX_REMOVE:
         buffer[i++] = '5';
         break;
+    case CODE_BOX_LIST:
+        buffer[i++] = '7';
+        break;
     default:
         break;
     }
     buffer[i++] = '|';
-    for (; i < 257 && *pipe_name != '\0'; i++) {
-        buffer[i] = *pipe_name++;
+    for (; i < PIPE_NAME_SIZE && *aux_pipe_name != '\0'; i++) {
+        buffer[i] = *aux_pipe_name++;
     }
-    for (; i < 257; i++) {
+    for (; i < PIPE_NAME_SIZE+1; i++) {
         buffer[i] = '\0';
     }
-    buffer[i++] = '|';
-    for (; i < 290 && *box_name != '\0'; i++) {
-        buffer[i] = *box_name++;
-    }
-    for (; i < 290; i++) {
-        buffer[i] = '\0';
-    }
-}
-
-void create_listing(char *buffer) {
-    int i = 0;
-    buffer[i++] = '7';
-    buffer[i++] = '|';
-    for (; i < 256 && *pipe_name != '\0'; i++) {
-        buffer[i] = *pipe_name++;
-    }
-    for (; i < 257; i++) {
-        buffer[i] = '\0';
+    switch (mode) {
+    case CODE_BOX_CREATE: case CODE_BOX_REMOVE:
+        buffer[i++] = '|';
+        for (; i < PIPE_PLUS_BOX_SIZE+1 && *aux_box_name != '\0'; i++) {
+            buffer[i] = *aux_box_name++;
+        }
+        for (; i < PIPE_PLUS_BOX_SIZE+2; i++) {
+            buffer[i] = '\0';
+        }
+    default:
+        break;
     }
 }
 
@@ -104,24 +103,28 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
         return EXIT_FAILURE;
     }
+
+    if (unlink(pipe_name) != 0 && errno != ENOENT) {
+        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        return -1;
+    }
+    if (mkfifo(pipe_name, 0666) != 0) {
+        fprintf(stdout, "ERROR %s\n", "mkfifo failed");
+        return -1;
+    }
     
     ssize_t bytes_written;
     char *buffer;
     switch (mode) {
     case CODE_BOX_CREATE: case CODE_BOX_REMOVE:
-        buffer = (char*) malloc(sizeof(char) * 291);
+        buffer = (char*) malloc(sizeof(char)*(PIPE_PLUS_BOX_SIZE+3));
         create_register(buffer);
-        bytes_written = write(register_pipe, buffer, sizeof(char)*290);
+        bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+2));
         break;
-    /* case CODE_BOX_CREATE:
-        buffer = (char*) malloc(sizeof(char) * 291);
-        create_register(buffer);
-        bytes_written = write(register_pipe, buffer, sizeof(char)*290);
-        break; */
     case CODE_BOX_LIST:
-        buffer = (char*) malloc(sizeof(char) * 258);
-        create_listing(buffer);
-        bytes_written = write(register_pipe, buffer, sizeof(char)*258);
+        buffer = (char*) malloc(sizeof(char) *(PIPE_NAME_SIZE+2));
+        create_register(buffer);
+        bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_NAME_SIZE+1));
         break;
     default:
         return EXIT_FAILURE;
@@ -136,10 +139,54 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    free(buffer);
+    buffer = (char*) malloc(sizeof(char) * 1028);
+    int named_pipe;
+    if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
+        fprintf(stdout, "%s\n", pipe_name);
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
+    }
+    while (true) {
+        
+        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*1028);
+        if (bytes_read == 0) {
+            switch (buffer[2]) {
+            case '0':
+                fprintf(stdout, "OK\n");
+                break;
+            default:
+                char error_message[ERROR_MESSAGE_SIZE];
+                for (int i = 4; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
+                    error_message[i-4] = buffer[i];
+                }
+                error_message[ERROR_MESSAGE_SIZE-1] = '\0';
+                fprintf(stdout, "ERROR %s\n", error_message);
+                break;
+            }
+            free(buffer);
+            return 0;
+        } else if (bytes_read < 0) {
+            fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+            free(buffer);
+            return EXIT_FAILURE;
+        }
+
+        //fputs(buffer, stdout);
+        /* for (int i = 0; i < 1028; i++) {
+            putchar(buffer[i]);
+        } */
+    }
+    free(buffer);
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+
+    if (unlink(pipe_name) != 0 && errno != ENOENT) {
+        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        return -1;
+    }
+
     return 0;
 }
-/* (void)argc;
-    (void)argv;
-    print_usage();
-    WARN("unimplemented"); // TODO: implement
-    return -1; */

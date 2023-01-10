@@ -1,4 +1,5 @@
 #include "logging.h"
+#include "config.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -20,19 +21,21 @@ static void sig_handler(int sig) {
 
 void create_register(char *buffer) {
     int i = 0;
+    char *aux_pipe_name = pipe_name;
+    char *aux_box_name = box_name;
     buffer[i++] = '2';
     buffer[i++] = '|';
-    for (; i < 257 && *pipe_name != '\0'; i++) {
-        buffer[i] = *pipe_name++;
+    for (; i < PIPE_NAME_SIZE && *aux_pipe_name != '\0'; i++) {
+        buffer[i] = *aux_pipe_name++;
     }
-    for (; i < 257; i++) {
+    for (; i < PIPE_NAME_SIZE+1; i++) {
         buffer[i] = '\0';
     }
     buffer[i++] = '|';
-    for (; i < 290 && *box_name != '\0'; i++) {
-        buffer[i] = *box_name++;
+    for (; i < PIPE_PLUS_BOX_SIZE+1 && *aux_box_name != '\0'; i++) {
+        buffer[i] = *aux_box_name++;
     }
-    for (; i < 290; i++) {
+    for (; i < PIPE_PLUS_BOX_SIZE+2; i++) {
         buffer[i] = '\0';
     }
 }
@@ -49,7 +52,7 @@ int main(int argc, char **argv) {
     pipe_name = argv[2];
     box_name = argv[3];
 
-    char buffer[291];
+    char buffer[PIPE_PLUS_BOX_SIZE+3];
     create_register(buffer);
 
     int register_pipe = open(register_pipe_name, O_WRONLY);
@@ -60,7 +63,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     
-    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*290);
+    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_NAME_SIZE+2));
     if (bytes_written < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return EXIT_FAILURE;
@@ -73,8 +76,3 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-/* (void)argc;
-    (void)argv;
-    fprintf(stderr, "usage: sub <register_pipe_name> <box_name>\n");
-    WARN("unimplemented"); // TODO: implement
-    return -1; */

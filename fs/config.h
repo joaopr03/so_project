@@ -8,4 +8,12 @@
 
 #define DELAY (5000)
 
+#define PIPE_NAME_SIZE (256) 
+
+#define BOX_NAME_SIZE (32)
+
+#define PIPE_PLUS_BOX_SIZE (PIPE_NAME_SIZE+BOX_NAME_SIZE)
+
+#define ERROR_MESSAGE_SIZE (1024)
+
 #endif // CONFIG_H
