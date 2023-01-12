@@ -170,46 +170,50 @@ int start_publisher() {
         return -1;
     }
     fprintf(stdout, "Sucessfully created\n");
-    char buffer[ERROR_MESSAGE_SIZE];
+    char buffer[P_S_MESSAGE_SIZE];
     int named_pipe;
-    
-    while (true) {
-        if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
+    if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
             fprintf(stdout, "%s\n", client_named_pipe_path);
             fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
             return EXIT_FAILURE;
         }
-        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
+    while (true) {
+        
+        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*P_S_MESSAGE_SIZE);
         if (bytes_read > 0) {
-            buffer[ERROR_MESSAGE_SIZE-1] = '\0';
+            buffer[P_S_MESSAGE_SIZE-1] = '\0';
             int fhandle = tfs_open(box_name, TFS_O_APPEND);
-            printf("%s\n", buffer);
-            if (tfs_write(fhandle, buffer, sizeof(char)*ERROR_MESSAGE_SIZE) < 0) {
+            
+            if (tfs_write(fhandle, buffer, (size_t) bytes_read) < 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to write box");
                 tfs_close(fhandle);
                 return EXIT_FAILURE;
             }
+            printf("%s\n", buffer);
             if (tfs_close(fhandle) != 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to close file");
                 return EXIT_FAILURE;
             }
         }
-        else if (bytes_read < 0) {
+        else if (bytes_read == 0) {
+            int fhandle = tfs_open(box_name, 0);
+            char buffer1[P_S_MESSAGE_SIZE];
+            while (tfs_read(fhandle, buffer1, P_S_MESSAGE_SIZE) != 0) {
+                printf("%s\n", buffer1);
+            }
+            tfs_close(fhandle);
+            return 0;
+        }
+        else {
             fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
             return EXIT_FAILURE;
         }
+        
+    }
         if (close(named_pipe) < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
             return EXIT_FAILURE;
         }
-    }
-    
-    
-
-    /* if (unlink(pipe_name) != 0 && errno != ENOENT) {
-        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
-        return -1;
-    } */
     return 0;
 }
 
@@ -221,45 +225,46 @@ int start_subscriber() {
         return -1;
     }
     fprintf(stdout, "Sucessfully created\n");
-    char buffer[ERROR_MESSAGE_SIZE];
+    char buffer[P_S_MESSAGE_SIZE];
     int named_pipe;
-    
-    while (true) {
-        if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
-            fprintf(stdout, "%s\n", client_named_pipe_path);
-            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
-            return EXIT_FAILURE;
-        }
-        ssize_t bytes_written;
-        ssize_t bytes_read;
-        do  {
-            int fhandle = tfs_open(box_name, TFS_O_APPEND);
-            bytes_read = tfs_read(fhandle, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
-            if (bytes_read < 0) {
-                fprintf(stdout, "ERROR %s\n", "Failed to read box");
-                tfs_close(fhandle);
-                return EXIT_FAILURE;
-            }
-            if (tfs_close(fhandle) != 0) {
-                fprintf(stdout, "ERROR %s\n", "Failed to close file");
-                return EXIT_FAILURE;
-            }
-            buffer[ERROR_MESSAGE_SIZE-1] = '\0';
-            printf("%s\n", buffer);
-            
-            bytes_written = write(named_pipe, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
-            if (bytes_written < 0) {
-                fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
-                return EXIT_FAILURE;
-            }
-        } while (bytes_read > 0);
-
-        if (close(named_pipe) < 0) {
-            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-            return EXIT_FAILURE;
-        }
+    if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
+        fprintf(stdout, "%s\n", client_named_pipe_path);
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
     }
+        
+    ssize_t bytes_written;
+    ssize_t bytes_read;
+    int fhandle = tfs_open(box_name, 0);
+    do {
+        bytes_read = tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE*sizeof(char));
+        if (bytes_read == 0) {
+            break;
+        } else if (bytes_read < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to read box");
+            tfs_close(fhandle);
+            return EXIT_FAILURE;
+        }
 
+        /* buffer[P_S_MESSAGE_SIZE-1] = '\0'; */
+        printf("%s\n", buffer);
+
+        bytes_written = write(named_pipe, buffer, sizeof(char)*P_S_MESSAGE_SIZE);
+        if (bytes_written < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+            return EXIT_FAILURE;
+        }
+    } while (true);
+        
+    if (tfs_close(fhandle) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close file");
+        return EXIT_FAILURE;
+    }
+        
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
     return 0;
 }
 

@@ -15,8 +15,13 @@ static int named_pipe;
 
 static void sig_handler(int sig) {
     if (sig == SIGINT) {
-        close(named_pipe);
-        unlink(pipe_name);
+        if (close(named_pipe) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+            unlink(pipe_name);
+        }
+        if (unlink(pipe_name) != 0 && errno != ENOENT) {
+            fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        }
         fprintf(stderr, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }
@@ -84,21 +89,23 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    char message[ERROR_MESSAGE_SIZE];
-    while (true) {
-
-        signal(SIGINT, sig_handler);
-
+    char message[P_S_MESSAGE_SIZE];
         if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
             fprintf(stdout, "%s\n", pipe_name);
             fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
             unlink(pipe_name);
             return EXIT_FAILURE;
         }
-        ssize_t bytes_read = read(named_pipe, message, sizeof(char)*ERROR_MESSAGE_SIZE);
+    while (true) {
+
+        signal(SIGINT, sig_handler);
+
+        ssize_t bytes_read = read(named_pipe, message, sizeof(char)*P_S_MESSAGE_SIZE);
         if (bytes_read > 0) {
             fprintf(stdout, "%s\n", message);
-        } else if (bytes_read < 0) {
+        } else if (bytes_read == 0) {}
+        
+        else {
             fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
             unlink(pipe_name);
             return EXIT_FAILURE;
@@ -108,13 +115,13 @@ int main(int argc, char **argv) {
         /* for (int i = 0; i < 1028; i++) {
             putchar(buffer[i]);
         } */
-        if (close(named_pipe) < 0) {
+        
+    }
+    if (close(named_pipe) < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
             unlink(pipe_name);
             return EXIT_FAILURE;
         }
-    }
-
     if (unlink(pipe_name) != 0 && errno != ENOENT) {
         fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         return EXIT_FAILURE;

@@ -16,8 +16,13 @@ static int named_pipe;
 
 static void sig_handler(int sig) {
     if (sig == EOF) {
-        close(named_pipe);
-        unlink(pipe_name);
+        if (close(named_pipe) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        }
+        fprintf(stdout, "%s\n", "LOGOUT");
+        if (unlink(pipe_name) != 0 && errno != ENOENT) {
+            fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        }
         fprintf(stderr, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }
@@ -87,7 +92,7 @@ int main(int argc, char **argv) {
 
     
     signal(EOF, sig_handler);
-    char buffer_input[ERROR_MESSAGE_SIZE];
+    char buffer_input[P_S_MESSAGE_SIZE];
     while (true) {
 
         if ((named_pipe = open(pipe_name, O_WRONLY)) < 0) {
@@ -97,32 +102,33 @@ int main(int argc, char **argv) {
             return EXIT_FAILURE;
         }
 
-        if (fscanf(stdin, "%s", buffer_input) < 0) {
-            fprintf(stdout, "ERROR %s\n", "Failed to read from stdin");
-            //return EXIT_FAILURE;
+        if (fgets(buffer_input, P_S_MESSAGE_SIZE, stdin) == NULL) {
             sig_handler(EOF);
+            fprintf(stdout, "ERROR %s\n", "Failed to read from stdin");
         }
         char *aux_buffer_input = buffer_input;
         int i = 0;
-        for (; i < ERROR_MESSAGE_SIZE-1 && *aux_buffer_input != '\0'; i++) {
+        for (; i < P_S_MESSAGE_SIZE-1 && *aux_buffer_input != '\n' && *aux_buffer_input != '\0'; i++) {
             buffer_input[i] = *aux_buffer_input++;
         }
-        for (; i < ERROR_MESSAGE_SIZE; i++) {
+        for (; i < P_S_MESSAGE_SIZE; i++) {
             buffer_input[i] = '\0';
         }
-        bytes_written = write(named_pipe, buffer_input, sizeof(char)*ERROR_MESSAGE_SIZE);
+        bytes_written = write(named_pipe, buffer_input, sizeof(char)*P_S_MESSAGE_SIZE);
         if (bytes_written < 0) {
             fputs(buffer, stdout);
             fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
             return EXIT_FAILURE;
         }
 
-        if (close(named_pipe) < 0) {
-            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-            return EXIT_FAILURE;
-        }
+        
     }
 
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+    fprintf(stdout, "%s\n", "LOGOUT");
     if (unlink(pipe_name) != 0 && errno != ENOENT) {
         fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         return EXIT_FAILURE;
