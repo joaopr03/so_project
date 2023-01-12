@@ -155,12 +155,12 @@ int main(int argc, char **argv) {
         
         ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+4));
         if (bytes_read == 0) {
+            char error_message[ERROR_MESSAGE_SIZE];
             switch (buffer[2]) {
             case '0':
                 fprintf(stdout, "OK\n");
                 break;
             default:
-                char error_message[ERROR_MESSAGE_SIZE];
                 for (int i = 4; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
                     error_message[i-4] = buffer[i];
                 }

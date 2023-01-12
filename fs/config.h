@@ -16,4 +16,6 @@
 
 #define ERROR_MESSAGE_SIZE (1024)
 
+#define P_S_MESSAGE_SIZE (128)
+
 #endif // CONFIG_H
