@@ -144,16 +144,14 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
     }
 }
 
-int register_entry() {
-    char client_named_pipe_path[PIPE_NAME_SIZE];
-    char box_name[BOX_NAME_SIZE];
+int register_entry(char *client_named_pipe_path, char *box_name) {
     int fhandle;
     
     if (process_entry(client_named_pipe_path, box_name) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
     }
-    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) != 0) {
+    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) < 0) {
         fprintf(stdout, "ERROR %s\n", "Box does not exist");
         return -1;
     }
@@ -161,8 +159,107 @@ int register_entry() {
         fprintf(stdout, "ERROR %s\n", "Failed close file");
         return -1;
     }
+    return 0;
+}
 
+int start_publisher() {
+    char client_named_pipe_path[PIPE_NAME_SIZE];
+    char box_name[BOX_NAME_SIZE];
+    if (register_entry(client_named_pipe_path, box_name) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to create publisher");
+        return -1;
+    }
     fprintf(stdout, "Sucessfully created\n");
+    char buffer[ERROR_MESSAGE_SIZE];
+    int named_pipe;
+    
+    while (true) {
+        if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
+            fprintf(stdout, "%s\n", client_named_pipe_path);
+            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+            return EXIT_FAILURE;
+        }
+        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
+        if (bytes_read > 0) {
+            buffer[ERROR_MESSAGE_SIZE-1] = '\0';
+            int fhandle = tfs_open(box_name, TFS_O_APPEND);
+            printf("%s\n", buffer);
+            if (tfs_write(fhandle, buffer, sizeof(char)*ERROR_MESSAGE_SIZE) < 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to write box");
+                tfs_close(fhandle);
+                return EXIT_FAILURE;
+            }
+            if (tfs_close(fhandle) != 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to close file");
+                return EXIT_FAILURE;
+            }
+        }
+        else if (bytes_read < 0) {
+            fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
+            return EXIT_FAILURE;
+        }
+        if (close(named_pipe) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+            return EXIT_FAILURE;
+        }
+    }
+    
+    
+
+    /* if (unlink(pipe_name) != 0 && errno != ENOENT) {
+        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        return -1;
+    } */
+    return 0;
+}
+
+int start_subscriber() {
+    char client_named_pipe_path[PIPE_NAME_SIZE];
+    char box_name[BOX_NAME_SIZE];
+    if (register_entry(client_named_pipe_path, box_name) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to create subscriber");
+        return -1;
+    }
+    fprintf(stdout, "Sucessfully created\n");
+    char buffer[ERROR_MESSAGE_SIZE];
+    int named_pipe;
+    
+    while (true) {
+        if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
+            fprintf(stdout, "%s\n", client_named_pipe_path);
+            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+            return EXIT_FAILURE;
+        }
+        ssize_t bytes_written;
+        ssize_t bytes_read;
+        do  {
+            int fhandle = tfs_open(box_name, TFS_O_APPEND);
+            bytes_read = tfs_read(fhandle, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
+            if (bytes_read < 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to read box");
+                tfs_close(fhandle);
+                return EXIT_FAILURE;
+            }
+            if (tfs_close(fhandle) != 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to close file");
+                return EXIT_FAILURE;
+            }
+            buffer[ERROR_MESSAGE_SIZE-1] = '\0';
+            printf("%s\n", buffer);
+            
+            bytes_written = write(named_pipe, buffer, sizeof(char)*ERROR_MESSAGE_SIZE);
+            if (bytes_written < 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+                return EXIT_FAILURE;
+            }
+        } while (bytes_read > 0);
+
+        if (close(named_pipe) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+            return EXIT_FAILURE;
+        }
+    }
+
     return 0;
 }
 
@@ -199,13 +296,13 @@ int create_box() {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
     }
-    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) == 0) {
+    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) > 0) {
         if (tfs_close(fhandle) != 0)
             send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed close file");
         send_message_manager(client_named_pipe_path, '6', -1,"create_box: Box already exist");
         return -1;
     }
-    if ((fhandle = tfs_open(box_name, TFS_O_CREAT)) != 0) {
+    if ((fhandle = tfs_open(box_name, TFS_O_CREAT)) < 0) {
         send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed create file");
         return -1;
     }
@@ -228,7 +325,7 @@ int remove_box() {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
     }
-    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) != 0) {
+    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) < 0) {
         send_message_manager(client_named_pipe_path, '6', -1,"remove_box: Box does not exist");
         return -1;
     }
@@ -299,11 +396,11 @@ int main(int argc, char **argv) {
             switch (op_code) {
             case OP_CODE_PUBLISHER:
                 printf("PUBLISHER: ");
-                register_entry();
+                start_publisher();
                 break;
             case OP_CODE_SUBSCRIBER:
                 printf("SUBSCRIBER: ");
-                register_entry();
+                start_subscriber();
                 break;
             case OP_CODE_BOX_CREATE:
                 printf("BOX_CREATE: ");

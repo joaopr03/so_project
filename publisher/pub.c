@@ -12,10 +12,13 @@
 static char *register_pipe_name;
 static char *pipe_name;
 static char *box_name;
+static int named_pipe;
 
 static void sig_handler(int sig) {
     if (sig == EOF) {
-        fprintf(stderr, "Caught EOF\n");
+        close(named_pipe);
+        unlink(pipe_name);
+        fprintf(stderr, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }
 }
@@ -46,8 +49,6 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "publisher: need more arguments\n", argv[0]);
         return -1;
     }
-
-    signal(EOF, sig_handler); //iplement in process client instead of here
     
     register_pipe_name = argv[1];
     pipe_name = argv[2];
@@ -63,8 +64,17 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
         return EXIT_FAILURE;
     }
+
+    if (unlink(pipe_name) != 0 && errno != ENOENT) {
+        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
+        return -1;
+    }
+    if (mkfifo(pipe_name, 0666) != 0) {
+        fprintf(stdout, "ERROR %s\n", "mkfifo failed");
+        return -1;
+    }
     
-    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_NAME_SIZE+2));
+    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+2));
     if (bytes_written < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return EXIT_FAILURE;
@@ -72,6 +82,49 @@ int main(int argc, char **argv) {
 
     if (close(register_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+
+    
+    signal(EOF, sig_handler);
+    char buffer_input[ERROR_MESSAGE_SIZE];
+    while (true) {
+
+        if ((named_pipe = open(pipe_name, O_WRONLY)) < 0) {
+            fprintf(stdout, "%s\n", pipe_name);
+            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+            unlink(pipe_name);
+            return EXIT_FAILURE;
+        }
+
+        if (fscanf(stdin, "%s", buffer_input) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to read from stdin");
+            //return EXIT_FAILURE;
+            sig_handler(EOF);
+        }
+        char *aux_buffer_input = buffer_input;
+        int i = 0;
+        for (; i < ERROR_MESSAGE_SIZE-1 && *aux_buffer_input != '\0'; i++) {
+            buffer_input[i] = *aux_buffer_input++;
+        }
+        for (; i < ERROR_MESSAGE_SIZE; i++) {
+            buffer_input[i] = '\0';
+        }
+        bytes_written = write(named_pipe, buffer_input, sizeof(char)*ERROR_MESSAGE_SIZE);
+        if (bytes_written < 0) {
+            fputs(buffer, stdout);
+            fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+            return EXIT_FAILURE;
+        }
+
+        if (close(named_pipe) < 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (unlink(pipe_name) != 0 && errno != ENOENT) {
+        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         return EXIT_FAILURE;
     }
 

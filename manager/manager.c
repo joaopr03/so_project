@@ -127,29 +127,33 @@ int main(int argc, char **argv) {
         bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_NAME_SIZE+1));
         break;
     default:
+        unlink(pipe_name);
         return EXIT_FAILURE;
     }
     if (bytes_written < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+        unlink(pipe_name);
         return EXIT_FAILURE;
     }
 
     if (close(register_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        unlink(pipe_name);
         return EXIT_FAILURE;
     }
 
     free(buffer);
-    buffer = (char*) malloc(sizeof(char) * 1028);
+    buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+4));
     int named_pipe;
     if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
         fprintf(stdout, "%s\n", pipe_name);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        unlink(pipe_name);
         return EXIT_FAILURE;
     }
     while (true) {
         
-        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*1028);
+        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+4));
         if (bytes_read == 0) {
             switch (buffer[2]) {
             case '0':
@@ -165,21 +169,19 @@ int main(int argc, char **argv) {
                 break;
             }
             free(buffer);
+            unlink(pipe_name);
             return 0;
         } else if (bytes_read < 0) {
             fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
             free(buffer);
+            unlink(pipe_name);
             return EXIT_FAILURE;
         }
-
-        //fputs(buffer, stdout);
-        /* for (int i = 0; i < 1028; i++) {
-            putchar(buffer[i]);
-        } */
     }
     free(buffer);
     if (close(named_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        unlink(pipe_name);
         return EXIT_FAILURE;
     }
 
