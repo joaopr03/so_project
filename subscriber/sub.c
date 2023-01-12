@@ -49,7 +49,8 @@ void create_register(char *buffer) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4) {// || strcmp(argv[0], "sub")) {
+    if (argc < 4) {
+        // || strcmp(argv[0], "sub")) {
         fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "subscriber: need more arguments\n", argv[0]);
         return -1;
     }
@@ -96,6 +97,7 @@ int main(int argc, char **argv) {
             unlink(pipe_name);
             return EXIT_FAILURE;
         }
+
     while (true) {
 
         signal(SIGINT, sig_handler);
@@ -117,7 +119,8 @@ int main(int argc, char **argv) {
         } */
         
     }
-    if (close(named_pipe) < 0) {
+
+    /* if (close(named_pipe) < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
             unlink(pipe_name);
             return EXIT_FAILURE;
@@ -125,7 +128,7 @@ int main(int argc, char **argv) {
     if (unlink(pipe_name) != 0 && errno != ENOENT) {
         fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         return EXIT_FAILURE;
-    }
+    } */
 
     return 0;
 }

@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
         
     }
 
-    if (close(named_pipe) < 0) {
+    /* if (close(named_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
     if (unlink(pipe_name) != 0 && errno != ENOENT) {
         fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         return EXIT_FAILURE;
-    }
+    } */
 
     return 0;
 }

@@ -210,10 +210,12 @@ int start_publisher() {
         }
         
     }
-        if (close(named_pipe) < 0) {
-            fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-            return EXIT_FAILURE;
-        }
+
+    /* if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    } */
+
     return 0;
 }
 
@@ -396,7 +398,6 @@ int main(int argc, char **argv) {
             bytes_read = read(register_pipe, &op_code, sizeof(char));
         } while (bytes_read < 0 && errno == EINTR);
 
-        // main listener loop
         while (bytes_read > 0) {
             switch (op_code) {
             case OP_CODE_PUBLISHER:
@@ -442,6 +443,6 @@ int main(int argc, char **argv) {
         }
     }
     
-    destroy_server(EXIT_SUCCESS);
+    //destroy_server(EXIT_SUCCESS);
     return 0;
 }
