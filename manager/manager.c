@@ -10,31 +10,19 @@
 static char *register_pipe_name;
 static char *pipe_name;
 static char *box_name;
-static int mode;
+static char mode;
 
 enum {
-    CODE_BOX_CREATE = 1,
-    CODE_BOX_REMOVE = 2,
-    CODE_BOX_LIST = 3
+    CODE_BOX_CREATE = '3',
+    CODE_BOX_REMOVE = '5',
+    CODE_BOX_LIST = '7'
 };
 
 void create_register(char *buffer) {
     int i = 0;
     char *aux_pipe_name = pipe_name;
     char *aux_box_name = box_name;
-    switch (mode) {
-    case CODE_BOX_CREATE:
-        buffer[i++] = '3';
-        break;
-    case CODE_BOX_REMOVE:
-        buffer[i++] = '5';
-        break;
-    case CODE_BOX_LIST:
-        buffer[i++] = '7';
-        break;
-    default:
-        break;
-    }
+    buffer[i++] = mode;
     buffer[i++] = '|';
     for (; i < PIPE_NAME_SIZE && *aux_pipe_name != '\0'; i++) {
         buffer[i] = *aux_pipe_name++;
@@ -56,16 +44,9 @@ void create_register(char *buffer) {
     }
 }
 
-/* static void print_usage() {
-    fprintf(stderr, "usage: \n"
-                    "   manager <register_pipe_name> create <box_name>\n"
-                    "   manager <register_pipe_name> remove <box_name>\n"
-                    "   manager <register_pipe_name> list\n");
-} */
-
 int main(int argc, char **argv) {
-    if (argc < 4) {// || strcmp(argv[0], "manager")) {
-        fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "manager: need more arguments\n", argv[0]);
+    if (argc < 4) {
+        fprintf(stdout, "ERROR %s\n", "manager: need more arguments\n");
         return -1;
     }
     
@@ -135,15 +116,12 @@ int main(int argc, char **argv) {
         unlink(pipe_name);
         return EXIT_FAILURE;
     }
-
     if (close(register_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         unlink(pipe_name);
         return EXIT_FAILURE;
     }
 
-    free(buffer);
-    buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+4));
     int named_pipe;
     if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
         fprintf(stdout, "%s\n", pipe_name);
@@ -151,8 +129,10 @@ int main(int argc, char **argv) {
         unlink(pipe_name);
         return EXIT_FAILURE;
     }
+
+    free(buffer);
+    buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+4));
     while (true) {
-        
         ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+4));
         if (bytes_read == 0) {
             char error_message[ERROR_MESSAGE_SIZE];
@@ -171,6 +151,7 @@ int main(int argc, char **argv) {
             free(buffer);
             unlink(pipe_name);
             return 0;
+
         } else if (bytes_read < 0) {
             fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
             free(buffer);
@@ -178,18 +159,6 @@ int main(int argc, char **argv) {
             return EXIT_FAILURE;
         }
     }
-    
-    /* free(buffer);
-    if (close(named_pipe) < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-        unlink(pipe_name);
-        return EXIT_FAILURE;
-    }
-
-    if (unlink(pipe_name) != 0 && errno != ENOENT) {
-        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
-        return -1;
-    } */
 
     return 0;
 }

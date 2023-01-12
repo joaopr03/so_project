@@ -19,7 +19,8 @@ enum {
     OP_CODE_BOX_REMOVE_R = '6',
     OP_CODE_BOX_LIST = '7',
     OP_CODE_BOX_LIST_R = '8',
-    OP_CODE_PUB_MSG = '9'
+    OP_CODE_PUB_MSG = '9',
+    OP_CODE_SUB_MSG = '0'
 };
 
 pthread_t threads;
@@ -35,7 +36,6 @@ worker_t *workers;
 static int register_pipe;
 static char *register_pipe_name;
 static int max_sessions;
-
 
 void destroy_server(int status) {
     free(workers);
@@ -134,11 +134,11 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
     }
     buffer[i++] = '|';
     
-    if (return_code != 0)
+    if (return_code != 0) {
         for (; i < ERROR_MESSAGE_SIZE+2 && *error_message != '\0'; i++) {
             buffer[i] = *error_message++;
         }
-
+    }
     for (; i < ERROR_MESSAGE_SIZE+3; i++) {
         buffer[i] = '\0';
     }
@@ -146,7 +146,6 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
 
 int register_entry(char *client_named_pipe_path, char *box_name) {
     int fhandle;
-    
     if (process_entry(client_named_pipe_path, box_name) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
@@ -173,12 +172,11 @@ int start_publisher() {
     char buffer[P_S_MESSAGE_SIZE];
     int named_pipe;
     if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
-            fprintf(stdout, "%s\n", client_named_pipe_path);
-            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
-            return EXIT_FAILURE;
-        }
+        fprintf(stdout, "%s\n", client_named_pipe_path);
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
+    }
     while (true) {
-        
         ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*P_S_MESSAGE_SIZE);
         if (bytes_read > 0) {
             buffer[P_S_MESSAGE_SIZE-1] = '\0';
@@ -208,14 +206,7 @@ int start_publisher() {
             fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
             return EXIT_FAILURE;
         }
-        
     }
-
-    /* if (close(named_pipe) < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-        return EXIT_FAILURE;
-    } */
-
     return 0;
 }
 
@@ -238,7 +229,7 @@ int start_subscriber() {
     ssize_t bytes_written;
     ssize_t bytes_read;
     int fhandle = tfs_open(box_name, 0);
-    do {
+    while (true) {
         bytes_read = tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE*sizeof(char));
         if (bytes_read == 0) {
             break;
@@ -256,13 +247,11 @@ int start_subscriber() {
             fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
             return EXIT_FAILURE;
         }
-    } while (true);
-        
+    }
     if (tfs_close(fhandle) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close file");
         return EXIT_FAILURE;
-    }
-        
+    }  
     if (close(named_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
@@ -285,12 +274,10 @@ int send_message_manager(const char *pipe_path, char operation, int32_t code, ch
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return -1;
     }
-
     if (close(named_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return -1;
     }
-
     return 0;
 }
 
@@ -303,7 +290,7 @@ int create_box() {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
     }
-    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) > 0) {
+    if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) >= 0) {
         if (tfs_close(fhandle) != 0)
             send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed close file");
         send_message_manager(client_named_pipe_path, '6', -1,"create_box: Box already exist");
@@ -351,13 +338,12 @@ int remove_box() {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) {// || strcmp(argv[0], "mbroker")) {
-        fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "mbroker: need more arguments\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stdout, "ERROR %s\n", "mbroker: need more arguments\n");
         return EXIT_SUCCESS;
     }
     register_pipe_name = argv[1];
     sscanf(argv[2], "%d", &max_sessions);
-
     if (init_server() != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to init server\n");
         return EXIT_FAILURE;
@@ -367,24 +353,16 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR unlink(%s) failed:\n", register_pipe_name);
         return EXIT_FAILURE;
     }
-
-    // Create pipe
     if (mkfifo(register_pipe_name, 0666) != 0) {
         fprintf(stdout, "ERROR %s\n", "mkfifo failed\n");
         return EXIT_FAILURE;
     }
 
-    /* // Open pipe read
-    register_pipe = open(register_pipe_name, O_RDONLY);
-    if (register_pipe < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
-        unlink(register_pipe_name);
-        exit(EXIT_FAILURE);
-    } */
+    signal(SIGINT, sig_handler);
 
+    ssize_t bytes_read;
+    uint8_t op_code;
     while(true) {
-        signal(SIGINT, sig_handler); //is this supposed to be here
-
         register_pipe = open(register_pipe_name, O_RDONLY);
         if (register_pipe < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to open server pipe");
@@ -392,8 +370,6 @@ int main(int argc, char **argv) {
             destroy_server(EXIT_FAILURE);
         }
 
-        ssize_t bytes_read;
-        uint8_t op_code;
         do {
             bytes_read = read(register_pipe, &op_code, sizeof(char));
         } while (bytes_read < 0 && errno == EINTR);
@@ -431,7 +407,6 @@ int main(int argc, char **argv) {
                 bytes_read = read(register_pipe, &op_code, sizeof(char));
             } while (bytes_read < 0 && errno == EINTR);
         }
-
         if (bytes_read < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
             destroy_server(EXIT_FAILURE);
@@ -442,7 +417,6 @@ int main(int argc, char **argv) {
             destroy_server(EXIT_FAILURE);
         }
     }
-    
-    //destroy_server(EXIT_SUCCESS);
+
     return 0;
 }

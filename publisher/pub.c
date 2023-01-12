@@ -8,7 +8,6 @@
 #include <sys/stat.h>
 #include <signal.h>
 
-//static int register_pipe;
 static char *register_pipe_name;
 static char *pipe_name;
 static char *box_name;
@@ -50,8 +49,8 @@ void create_register(char *buffer) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 4) {// || strcmp(argv[0], "pub")) {
-        fprintf(stdout, "ERROR %s ; argv[0] = %s\n", "publisher: need more arguments\n", argv[0]);
+    if (argc < 4) {
+        fprintf(stdout, "ERROR %s\n", "publisher: need more arguments\n");
         return -1;
     }
     
@@ -61,7 +60,6 @@ int main(int argc, char **argv) {
 
     char buffer[PIPE_PLUS_BOX_SIZE+3];
     create_register(buffer);
-
     int register_pipe = open(register_pipe_name, O_WRONLY);
     if (register_pipe < 0) {
         if (errno == ENOENT)
@@ -84,30 +82,29 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return EXIT_FAILURE;
     }
-
     if (close(register_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
-
     
+    if ((named_pipe = open(pipe_name, O_WRONLY)) < 0) {
+        fprintf(stdout, "%s\n", pipe_name);
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        unlink(pipe_name);
+        return EXIT_FAILURE;
+    }
+
     signal(EOF, sig_handler);
+
     char buffer_input[P_S_MESSAGE_SIZE];
     while (true) {
-
-        if ((named_pipe = open(pipe_name, O_WRONLY)) < 0) {
-            fprintf(stdout, "%s\n", pipe_name);
-            fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
-            unlink(pipe_name);
-            return EXIT_FAILURE;
-        }
-
         if (fgets(buffer_input, P_S_MESSAGE_SIZE, stdin) == NULL) {
             sig_handler(EOF);
             fprintf(stdout, "ERROR %s\n", "Failed to read from stdin");
         }
-        char *aux_buffer_input = buffer_input;
+
         int i = 0;
+        char *aux_buffer_input = buffer_input;
         for (; i < P_S_MESSAGE_SIZE-1 && *aux_buffer_input != '\n' && *aux_buffer_input != '\0'; i++) {
             buffer_input[i] = *aux_buffer_input++;
         }
@@ -120,19 +117,7 @@ int main(int argc, char **argv) {
             fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
             return EXIT_FAILURE;
         }
-
-        
     }
-
-    /* if (close(named_pipe) < 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
-        return EXIT_FAILURE;
-    }
-    fprintf(stdout, "%s\n", "LOGOUT");
-    if (unlink(pipe_name) != 0 && errno != ENOENT) {
-        fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
-        return EXIT_FAILURE;
-    } */
 
     return 0;
 }
