@@ -24,6 +24,14 @@ enum {
 };
 
 pthread_t threads;
+
+typedef struct {
+    char name[BOX_NAME_SIZE];
+    uint64_t size;
+    uint64_t n_publishers;
+    uint64_t n_subscribers;
+} box_t;
+
 typedef struct {
     int session_id;
     bool to_execute;
@@ -33,12 +41,14 @@ typedef struct {
 } worker_t;
 
 worker_t *workers;
+box_t *boxes;
 static int register_pipe;
 static char *register_pipe_name;
 static int max_sessions;
 
 void destroy_server(int status) {
     free(workers);
+    free(boxes);
     close(register_pipe);
     if (unlink(register_pipe_name) != 0 && errno != ENOENT) {
         fprintf(stdout, "ERROR %s\n", "Failed to delete pipe");
@@ -80,6 +90,7 @@ void *session_worker(void *args) {
 
 int init_server() {
     workers = malloc(sizeof(worker_t)*(unsigned int) max_sessions);
+    boxes = malloc(sizeof(box_t)*(unsigned int) max_sessions);
     for (int i = 0; i < max_sessions; ++i) {
         workers[i].session_id = i;
         workers[i].to_execute = false;
@@ -92,6 +103,10 @@ int init_server() {
         if (pthread_create(&workers[i].tid, NULL, session_worker, &workers[i]) != 0) {
             return -1;
         }
+        boxes[i].n_subscribers = 0;
+        boxes[i].n_publishers = 0;
+        strcpy(boxes[i].name, "");
+        boxes[i].size = 0;
     }
     if (tfs_init(NULL) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to init tfs\n");
@@ -147,6 +162,20 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
     }
 }
 
+void create_message(char *new_buffer, char *message) {
+    int i = 0;
+    char *aux_message = message;
+    new_buffer[i++] = '1';
+    new_buffer[i++] = '0';
+    new_buffer[i++] = '|';
+    for (; i < P_S_MESSAGE_SIZE+1 && *aux_message != '\0'; i++) {
+        new_buffer[i] = *aux_message++;
+    }
+    for (; i < P_S_MESSAGE_SIZE+2; i++) {
+        new_buffer[i] = '\0';
+    }
+}
+
 int register_entry(char *client_named_pipe_path, char *box_name) {
     int fhandle;
     if (process_entry(client_named_pipe_path, box_name) != 0) {
@@ -161,40 +190,70 @@ int register_entry(char *client_named_pipe_path, char *box_name) {
         fprintf(stdout, "ERROR %s\n", "Failed close file");
         return -1;
     }
-    return 0;
+    for (int i = 0; i < max_sessions; i++) {
+        if (!strcmp(box_name,boxes[i].name)) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 int start_publisher() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
+    int named_pipe;
 
-    int aux_aux_pipe;
-    if (register_entry(client_named_pipe_path, box_name) != 0) {
+    int box_index;
+    if ((box_index = register_entry(client_named_pipe_path, box_name)) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create publisher");
-        aux_aux_pipe = open(client_named_pipe_path, O_WRONLY); ssize_t a = write(aux_aux_pipe, "ER", sizeof(char)*3); (void)a; close(aux_aux_pipe);
+        named_pipe = open(client_named_pipe_path, O_WRONLY);
+        write(named_pipe, "ER", sizeof(char)*3);
+        close(named_pipe);
         return -1;
     }
-    aux_aux_pipe = open(client_named_pipe_path, O_WRONLY); ssize_t a = write(aux_aux_pipe, "OK", sizeof(char)*3); (void)a; close(aux_aux_pipe);
+    named_pipe = open(client_named_pipe_path, O_WRONLY);
+    if (named_pipe < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
+    }
+    if (write(named_pipe, "OK", sizeof(char)*3) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+        return EXIT_FAILURE;
+    }
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+    boxes[box_index].n_publishers++;
     fprintf(stdout, "Sucessfully created\n");
 
-    char buffer[P_S_MESSAGE_SIZE];
-    int named_pipe;
+    char message_buffer[P_S_MESSAGE_SIZE+3];
     if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
         fprintf(stdout, "%s\n", client_named_pipe_path);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return EXIT_FAILURE;
     }
-    while (true) {
-        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*P_S_MESSAGE_SIZE);
+    char buffer[P_S_MESSAGE_SIZE];
+    while (true) {  
+        ssize_t bytes_read = read(named_pipe, message_buffer, sizeof(char)*(P_S_MESSAGE_SIZE+3));
         if (bytes_read > 0) {
-            buffer[P_S_MESSAGE_SIZE-1] = '\0';
             int fhandle = tfs_open(box_name, TFS_O_APPEND);
-            
-            if (tfs_write(fhandle, buffer, (size_t) bytes_read) < 0) {
+            size_t stringlen = strlen(message_buffer)-2;
+            for (int i = 0; i < stringlen; i++) {
+                buffer[i] = message_buffer[i+3];
+            }
+            buffer[stringlen-1] = '\0';
+            ssize_t bytes_written = tfs_write(fhandle, buffer, stringlen);
+            if (bytes_written <= 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to write box");
                 tfs_close(fhandle);
                 return EXIT_FAILURE;
-            }
+            } /* else if (bytes_written == 0) { //if 0 bytes written remove file contents
+                tfs_close(fhandle);
+                fhandle = tfs_open(box_name, TFS_O_TRUNC);
+                tfs_write(fhandle, buffer, (size_t) bytes_read-3);
+            } */
+            boxes[box_index].size+= bytes_written;
             printf("%s\n", buffer);
             if (tfs_close(fhandle) != 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to close file");
@@ -203,11 +262,18 @@ int start_publisher() {
         }
         else if (bytes_read == 0) {
             int fhandle = tfs_open(box_name, 0);
-            char buffer1[P_S_MESSAGE_SIZE];
-            while (tfs_read(fhandle, buffer1, P_S_MESSAGE_SIZE) != 0) {
-                printf("%s\n", buffer1);
+            while (tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE) > 0) {
+                int count = 0;
+                for (int j = 0; j < P_S_MESSAGE_SIZE; j++) {
+                    if (buffer[j] == '\0') {
+                        count++;
+                        if (count == 2) break;
+                        putchar('\n');
+                    } else { count = 0; putchar(buffer[j]);}
+                }
             }
             tfs_close(fhandle);
+            boxes[box_index].n_publishers--;
             fprintf(stdout, "Sucessfully ended\n");
             return 0;
         }
@@ -222,50 +288,72 @@ int start_publisher() {
 int start_subscriber() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
+    int named_pipe;
 
-    int aux_aux_pipe;
-    if (register_entry(client_named_pipe_path, box_name) != 0) {
+    int box_index;
+    if ((box_index = register_entry(client_named_pipe_path, box_name)) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create subscriber");
-        aux_aux_pipe = open(client_named_pipe_path, O_WRONLY);
-        ssize_t a = write(aux_aux_pipe, "ER", sizeof(char)*3);
-        (void)a;
-        close(aux_aux_pipe);
+        named_pipe = open(client_named_pipe_path, O_WRONLY);
+        write(named_pipe, "ER", sizeof(char)*3);
+        close(named_pipe);
         return -1;
     }
-    aux_aux_pipe = open(client_named_pipe_path, O_WRONLY);
-        ssize_t a = write(aux_aux_pipe, "OK", sizeof(char)*3);
-        (void)a;
-        close(aux_aux_pipe);
+    named_pipe = open(client_named_pipe_path, O_WRONLY);
+    if (named_pipe < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
+    }
+    if (write(named_pipe, "OK", sizeof(char)*3) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+        return EXIT_FAILURE;
+    }
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+    boxes[box_index].n_subscribers++;
     fprintf(stdout, "Sucessfully created\n");
 
-    char buffer[P_S_MESSAGE_SIZE];
-    int named_pipe;
     if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
         fprintf(stdout, "%s\n", client_named_pipe_path);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return EXIT_FAILURE;
     }
-        
+
     ssize_t bytes_written;
     ssize_t bytes_read;
     int fhandle = tfs_open(box_name, 0);
+    char message_buffer[P_S_MESSAGE_SIZE+3];
     while (true) {
-        bytes_read = tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE*sizeof(char));
-        if (bytes_read == 0) {
-            break;
-        } else if (bytes_read < 0) {
+        char buffer[P_S_MESSAGE_SIZE];
+        int i = 0;
+        while (true) {
+            char aux_char;
+            bytes_read = tfs_read(fhandle, &aux_char, sizeof(char));
+            if (bytes_read <= 0) break;
+            buffer[i++] = aux_char;
+            if (aux_char == '\0') break;
+        }
+        
+        if (bytes_read < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to read box");
             tfs_close(fhandle);
             return EXIT_FAILURE;
         }
 
-        /* buffer[P_S_MESSAGE_SIZE-1] = '\0'; */
-        printf("%s\n", buffer);
-
-        bytes_written = write(named_pipe, buffer, sizeof(char)*P_S_MESSAGE_SIZE);
-        if (bytes_written < 0) {
-            fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
-            return EXIT_FAILURE;
+        if (mkfifo(client_named_pipe_path, 0666) == 0) { //if fifo closed in subscriber
+            unlink(client_named_pipe_path);
+            break;
+        }
+        
+        if (bytes_read != 0) {
+            printf("NIGGER: %s\n", buffer);
+            create_message(message_buffer, buffer);
+            bytes_written = write(named_pipe, message_buffer, sizeof(char)*(P_S_MESSAGE_SIZE+3));
+            if (bytes_written < 0) {
+                fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+                return EXIT_FAILURE;
+            }
         }
     }
     if (tfs_close(fhandle) != 0) {
@@ -276,6 +364,7 @@ int start_subscriber() {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
+    boxes[box_index].n_subscribers--;
     fprintf(stdout, "Sucessfully ended\n");
     return 0;
 }
@@ -326,6 +415,12 @@ int create_box() {
         return -1;
     }
 
+    for (int i = 0; i < max_sessions; i++) {
+        if (!strcmp("",boxes[i].name)) {
+            strcpy(boxes[i].name, box_name);
+            break;
+        }
+    }
     send_message_manager(client_named_pipe_path, '4', 0, "");
     fprintf(stdout, "OK\n");
     return 0;
@@ -353,6 +448,12 @@ int remove_box() {
         return -1;
     }
 
+    for (int i = 0; i < max_sessions; i++) {
+        if (!strcmp(box_name, boxes[i].name)) {
+            strcpy(boxes[i].name, "");
+            break;
+        }
+    }
     send_message_manager(client_named_pipe_path, '6', 0, "");
     fprintf(stdout, "OK\n");
     return 0;
@@ -414,6 +515,7 @@ int main(int argc, char **argv) {
                 remove_box();
                 break;
             case OP_CODE_BOX_LIST:
+                list_boxes();
                 printf("BOX_LIST: ");
                 break;
             case OP_CODE_PUB_MSG:

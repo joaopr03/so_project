@@ -88,7 +88,25 @@ int main(int argc, char **argv) {
     }
 
     
-    char aux_buffer[3]; int aux_pipe = open(pipe_name, O_RDONLY); ssize_t a = read(aux_pipe, aux_buffer, sizeof(char)*3); (void)a; close(aux_pipe); if (strcmp(aux_buffer, "OK")) {printf("NIGGA\n");unlink(pipe_name);return -1;}
+    char aux_buffer[3];
+    int aux_pipe = open(pipe_name, O_RDONLY);
+    if (aux_pipe < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return EXIT_FAILURE;
+    }
+    if (read(aux_pipe, aux_buffer, sizeof(char)*3) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
+        return EXIT_FAILURE;
+    }
+    if (close(aux_pipe) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return EXIT_FAILURE;
+    }
+    if (strcmp(aux_buffer, "OK")) {
+        printf("NIGGA\n");
+        unlink(pipe_name);
+        return -1;
+    }
 
     if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
         fprintf(stdout, "%s\n", pipe_name);
@@ -99,11 +117,15 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, sig_handler);
 
-    char message[P_S_MESSAGE_SIZE];
+    char message[P_S_MESSAGE_SIZE+3];
+    char message_buffer[P_S_MESSAGE_SIZE];
     while (true) {
-        ssize_t bytes_read = read(named_pipe, message, sizeof(char)*P_S_MESSAGE_SIZE);
+        ssize_t bytes_read = read(named_pipe, message, sizeof(char)*(P_S_MESSAGE_SIZE+3));
         if (bytes_read > 0) {
-            fprintf(stdout, "%s\n", message);
+            for (int i = 0; i < P_S_MESSAGE_SIZE; i++) {
+                message_buffer[i] = message[i+3];
+            }
+            fprintf(stdout, "%s\n", message_buffer);
         } else if (bytes_read == 0) {}
         
         else {
