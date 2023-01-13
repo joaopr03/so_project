@@ -131,9 +131,9 @@ int main(int argc, char **argv) {
     }
 
     free(buffer);
-    buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+4));
+    buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+5));
     while (true) {
-        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+4));
+        ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
         if (bytes_read == 0) {
             char error_message[ERROR_MESSAGE_SIZE];
             switch (buffer[2]) {
@@ -141,8 +141,8 @@ int main(int argc, char **argv) {
                 fprintf(stdout, "OK\n");
                 break;
             default:
-                for (int i = 4; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
-                    error_message[i-4] = buffer[i];
+                for (int i = 5; i < ERROR_MESSAGE_SIZE+5 && buffer[i] != '\0'; i++) {
+                    error_message[i-5] = buffer[i];
                 }
                 error_message[ERROR_MESSAGE_SIZE-1] = '\0';
                 fprintf(stdout, "ERROR %s\n", error_message);

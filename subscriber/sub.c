@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
         return -1;
     }
     
-    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+2));
+    ssize_t bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+3));
     if (bytes_written < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return EXIT_FAILURE;
@@ -86,6 +86,9 @@ int main(int argc, char **argv) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
+
+    
+    char aux_buffer[3]; int aux_pipe = open(pipe_name, O_RDONLY); ssize_t a = read(aux_pipe, aux_buffer, sizeof(char)*3); (void)a; close(aux_pipe); if (strcmp(aux_buffer, "OK")) {printf("NIGGA\n");unlink(pipe_name);return -1;}
 
     if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
         fprintf(stdout, "%s\n", pipe_name);

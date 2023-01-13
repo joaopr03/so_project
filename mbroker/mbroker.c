@@ -116,6 +116,7 @@ int process_entry(char *client, char *box) {
         destroy_server(EXIT_FAILURE);
         return -1;
     }
+    bytes_read = read(register_pipe, &aux, sizeof(char)); //read the "\0"
     box[BOX_NAME_SIZE-1] = '\0';
     return 0;
 }
@@ -127,19 +128,21 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
     switch (return_code) {
     case EXIT_SUCCESS:
         buffer[i++] = '0';
+        buffer[i++] = '\0';
         break;
     default:
+        buffer[i++] = '-';
         buffer[i++] = '1';
         break;
     }
     buffer[i++] = '|';
     
     if (return_code != 0) {
-        for (; i < ERROR_MESSAGE_SIZE+2 && *error_message != '\0'; i++) {
+        for (; i < ERROR_MESSAGE_SIZE+3 && *error_message != '\0'; i++) {
             buffer[i] = *error_message++;
         }
     }
-    for (; i < ERROR_MESSAGE_SIZE+3; i++) {
+    for (; i < ERROR_MESSAGE_SIZE+4; i++) {
         buffer[i] = '\0';
     }
 }
@@ -164,11 +167,16 @@ int register_entry(char *client_named_pipe_path, char *box_name) {
 int start_publisher() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
+
+    int aux_aux_pipe;
     if (register_entry(client_named_pipe_path, box_name) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create publisher");
+        aux_aux_pipe = open(client_named_pipe_path, O_WRONLY); ssize_t a = write(aux_aux_pipe, "ER", sizeof(char)*3); (void)a; close(aux_aux_pipe);
         return -1;
     }
+    aux_aux_pipe = open(client_named_pipe_path, O_WRONLY); ssize_t a = write(aux_aux_pipe, "OK", sizeof(char)*3); (void)a; close(aux_aux_pipe);
     fprintf(stdout, "Sucessfully created\n");
+
     char buffer[P_S_MESSAGE_SIZE];
     int named_pipe;
     if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
@@ -200,6 +208,7 @@ int start_publisher() {
                 printf("%s\n", buffer1);
             }
             tfs_close(fhandle);
+            fprintf(stdout, "Sucessfully ended\n");
             return 0;
         }
         else {
@@ -213,11 +222,22 @@ int start_publisher() {
 int start_subscriber() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
+
+    int aux_aux_pipe;
     if (register_entry(client_named_pipe_path, box_name) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create subscriber");
+        aux_aux_pipe = open(client_named_pipe_path, O_WRONLY);
+        ssize_t a = write(aux_aux_pipe, "ER", sizeof(char)*3);
+        (void)a;
+        close(aux_aux_pipe);
         return -1;
     }
+    aux_aux_pipe = open(client_named_pipe_path, O_WRONLY);
+        ssize_t a = write(aux_aux_pipe, "OK", sizeof(char)*3);
+        (void)a;
+        close(aux_aux_pipe);
     fprintf(stdout, "Sucessfully created\n");
+
     char buffer[P_S_MESSAGE_SIZE];
     int named_pipe;
     if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
@@ -256,6 +276,7 @@ int start_subscriber() {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
     }
+    fprintf(stdout, "Sucessfully ended\n");
     return 0;
 }
 
@@ -266,9 +287,9 @@ int send_message_manager(const char *pipe_path, char operation, int32_t code, ch
         return -1;
     }
 
-    char buffer[ERROR_MESSAGE_SIZE+4];
+    char buffer[ERROR_MESSAGE_SIZE+5];
     box_feedback(buffer, operation, code, message);
-    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+4));
+    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
     if (bytes_written < 0) {
         fputs(buffer, stdout);
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
