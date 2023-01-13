@@ -44,6 +44,26 @@ void create_register(char *buffer) {
     }
 }
 
+int cmpBoxes(int a, int b) {
+  return (strcmp(box[a].name, box[b].name) > 0);
+}
+
+void bubbleSort(int indexes[], int size, int (*cmpFunc) (int a, int b)) {
+  int i, j, done;
+  
+  for (i = 0; i < size-1; i++){
+    done=1;
+    for (j = size-1; j > i; j--) 
+    	if ((*cmpFunc)(indexes[j-1], indexes[j])) {
+			int aux = indexes[j];
+			indexes[j] = indexes[j-1];
+			indexes[j-1] = aux;
+			done=0;
+    	}
+    if (done) break;
+  }
+}
+
 int main(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stdout, "ERROR %s\n", "manager: need more arguments\n");
