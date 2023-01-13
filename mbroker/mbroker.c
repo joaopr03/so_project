@@ -40,6 +40,7 @@ typedef struct {
     pthread_cond_t cond;
 } worker_t;
 
+int n_boxes = 0;
 worker_t *workers;
 box_t *boxes;
 static int register_pipe;
@@ -125,6 +126,9 @@ int process_entry(char *client, char *box) {
         return -1;
     }
     client[PIPE_NAME_SIZE-1] = '\0';
+
+    if (box == NULL) return 0;
+
     bytes_read = read(register_pipe, box, BOX_NAME_SIZE*sizeof(char));
     if (bytes_read < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
@@ -391,6 +395,58 @@ int send_message_manager(const char *pipe_path, char operation, int32_t code, ch
     return 0;
 }
 
+int send_box_manager(const char *pipe_path, char last, box_t box) {
+    //[ code = 8 (uint8_t) ] | [ last (uint8_t) ] | [ box_name (char[32]) ] | [ box_size (uint64_t) ] | [ n_publishers (uint64_t) ] | [ n_subscribers (uint64_t) ]
+    int named_pipe = open(pipe_path, O_WRONLY);
+    if (named_pipe < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
+        return -1;
+    }
+
+    char buffer[BOX_NAME_SIZE];
+    
+    
+    
+    int i = 0;
+    buffer[i++] = OP_CODE_BOX_LIST_R;
+    buffer[i++] = '|';
+    buffer[i++] = last;
+    switch (return_code) {
+    case EXIT_SUCCESS:
+        buffer[i++] = '0';
+        buffer[i++] = '\0';
+        break;
+    default:
+        buffer[i++] = '-';
+        buffer[i++] = '1';
+        break;
+    }
+    buffer[i++] = '|';
+    
+    if (return_code != 0) {
+        for (; i < ERROR_MESSAGE_SIZE+3 && *error_message != '\0'; i++) {
+            buffer[i] = *error_message++;
+        }
+    }
+    for (; i < ERROR_MESSAGE_SIZE+4; i++) {
+        buffer[i] = '\0';
+    }
+
+
+    //box_feedback(buffer, operation, code, message);
+    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
+    if (bytes_written < 0) {
+        fputs(buffer, stdout);
+        fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
+        return -1;
+    }
+    if (close(named_pipe) < 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
+        return -1;
+    }
+    return 0;
+}
+
 int create_box() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
@@ -402,26 +458,27 @@ int create_box() {
     }
     if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) >= 0) {
         if (tfs_close(fhandle) != 0)
-            send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed close file");
-        send_message_manager(client_named_pipe_path, '6', -1,"create_box: Box already exist");
+            send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, -1,"create_box: Failed close file");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, -1,"create_box: Box already exist");
         return -1;
     }
     if ((fhandle = tfs_open(box_name, TFS_O_CREAT)) < 0) {
-        send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed create file");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, -1,"create_box: Failed create file");
         return -1;
     }
     if (tfs_close(fhandle) != 0) {
-        send_message_manager(client_named_pipe_path, '6', -1,"create_box: Failed close file");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, -1,"create_box: Failed close file");
         return -1;
     }
 
     for (int i = 0; i < max_sessions; i++) {
         if (!strcmp("",boxes[i].name)) {
+            n_boxes++;
             strcpy(boxes[i].name, box_name);
             break;
         }
     }
-    send_message_manager(client_named_pipe_path, '4', 0, "");
+    send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, 0, "");
     fprintf(stdout, "OK\n");
     return 0;
 }
@@ -436,25 +493,53 @@ int remove_box() {
         return -1;
     }
     if ((fhandle = tfs_open(box_name, TFS_O_APPEND)) < 0) {
-        send_message_manager(client_named_pipe_path, '6', -1,"remove_box: Box does not exist");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, -1,"remove_box: Box does not exist");
         return -1;
     }
     if (tfs_close(fhandle) != 0) {
-        send_message_manager(client_named_pipe_path, '6', -1,"remove_box: Failed close file");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, -1,"remove_box: Failed close file");
         return -1;
     }
     if (tfs_unlink(box_name) != 0) {
-        send_message_manager(client_named_pipe_path, '6', -1,"remove_box: Failed unlink file");
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, -1,"remove_box: Failed unlink file");
         return -1;
     }
 
     for (int i = 0; i < max_sessions; i++) {
         if (!strcmp(box_name, boxes[i].name)) {
+            n_boxes--;
             strcpy(boxes[i].name, "");
             break;
         }
     }
-    send_message_manager(client_named_pipe_path, '6', 0, "");
+    send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, 0, "");
+    fprintf(stdout, "OK\n");
+    return 0;
+}
+
+int list_boxes() {
+    char client_named_pipe_path[PIPE_NAME_SIZE];
+    
+    if (process_entry(client_named_pipe_path, NULL) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
+        return -1;
+    }
+
+    if (n_boxes == 0) {
+        send_box_manager(client_named_pipe_path, '1', NULL);
+    }
+    int count = 0;
+    for (int i = 0; i < max_sessions; i++) {
+        if (strcmp("", boxes[i].name)) {
+            count++;
+            if (count == n_boxes) {
+                send_box_manager(client_named_pipe_path, '1', box[i]);
+                break;
+            }
+            send_box_manager(client_named_pipe_path, '0', box[i]);
+        }
+    }
+    
     fprintf(stdout, "OK\n");
     return 0;
 }
