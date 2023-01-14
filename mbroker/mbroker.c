@@ -128,6 +128,7 @@ int process_entry(char *client, char *box) {
     client[PIPE_NAME_SIZE-1] = '\0';
 
     if (box == NULL) return 0;
+    bytes_read = read(register_pipe, &aux, sizeof(char)); //read the "|"
 
     bytes_read = read(register_pipe, box, BOX_NAME_SIZE*sizeof(char));
     if (bytes_read < 0) {
@@ -135,7 +136,7 @@ int process_entry(char *client, char *box) {
         destroy_server(EXIT_FAILURE);
         return -1;
     }
-    bytes_read = read(register_pipe, &aux, sizeof(char)); //read the "\0"
+    //bytes_read = read(register_pipe, &aux, sizeof(char)); //read the "\0"
     box[BOX_NAME_SIZE-1] = '\0';
     return 0;
 }
@@ -157,11 +158,11 @@ void box_feedback(char *buffer, char box_operation, int32_t return_code, char *e
     buffer[i++] = '|';
     
     if (return_code != 0) {
-        for (; i < ERROR_MESSAGE_SIZE+3 && *error_message != '\0'; i++) {
+        for (; i < ERROR_MESSAGE_SIZE+4 && *error_message != '\0'; i++) {
             buffer[i] = *error_message++;
         }
     }
-    for (; i < ERROR_MESSAGE_SIZE+4; i++) {
+    for (; i < ERROR_MESSAGE_SIZE+5; i++) {
         buffer[i] = '\0';
     }
 }
@@ -172,10 +173,10 @@ void create_message(char *new_buffer, char *message) {
     new_buffer[i++] = '1';
     new_buffer[i++] = '0';
     new_buffer[i++] = '|';
-    for (; i < P_S_MESSAGE_SIZE+1 && *aux_message != '\0'; i++) {
+    for (; i < P_S_MESSAGE_SIZE+2 && *aux_message != '\0'; i++) {
         new_buffer[i] = *aux_message++;
     }
-    for (; i < P_S_MESSAGE_SIZE+2; i++) {
+    for (; i < P_S_MESSAGE_SIZE+3; i++) {
         new_buffer[i] = '\0';
     }
 }
@@ -211,7 +212,7 @@ int start_publisher() {
     if ((box_index = register_entry(client_named_pipe_path, box_name)) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create publisher");
         named_pipe = open(client_named_pipe_path, O_WRONLY);
-        write(named_pipe, "ER", sizeof(char)*3);
+        if (write(named_pipe, "ER", sizeof(char)*3) < 0) {};
         close(named_pipe);
         return -1;
     }
@@ -257,7 +258,7 @@ int start_publisher() {
                 fhandle = tfs_open(box_name, TFS_O_TRUNC);
                 tfs_write(fhandle, buffer, (size_t) bytes_read-3);
             } */
-            boxes[box_index].size+= bytes_written;
+            boxes[box_index].size += (uint64_t) bytes_written;
             printf("%s\n", buffer);
             if (tfs_close(fhandle) != 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to close file");
@@ -298,7 +299,7 @@ int start_subscriber() {
     if ((box_index = register_entry(client_named_pipe_path, box_name)) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to create subscriber");
         named_pipe = open(client_named_pipe_path, O_WRONLY);
-        write(named_pipe, "ER", sizeof(char)*3);
+        if (write(named_pipe, "ER", sizeof(char)*3) < 0) {};
         close(named_pipe);
         return -1;
     }
@@ -395,46 +396,58 @@ int send_message_manager(const char *pipe_path, char operation, int32_t code, ch
     return 0;
 }
 
-int send_box_manager(const char *pipe_path, char last, box_t box) {
-    //[ code = 8 (uint8_t) ] | [ last (uint8_t) ] | [ box_name (char[32]) ] | [ box_size (uint64_t) ] | [ n_publishers (uint64_t) ] | [ n_subscribers (uint64_t) ]
+int send_box_manager(const char *pipe_path, char last, box_t *box) {
     int named_pipe = open(pipe_path, O_WRONLY);
     if (named_pipe < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return -1;
     }
 
-    char buffer[BOX_NAME_SIZE];
-    
-    
-    
+    char buffer[BOX_NAME_SIZE+17];
     int i = 0;
     buffer[i++] = OP_CODE_BOX_LIST_R;
     buffer[i++] = '|';
     buffer[i++] = last;
-    switch (return_code) {
-    case EXIT_SUCCESS:
-        buffer[i++] = '0';
-        buffer[i++] = '\0';
-        break;
-    default:
-        buffer[i++] = '-';
-        buffer[i++] = '1';
-        break;
-    }
     buffer[i++] = '|';
-    
-    if (return_code != 0) {
-        for (; i < ERROR_MESSAGE_SIZE+3 && *error_message != '\0'; i++) {
-            buffer[i] = *error_message++;
+    if (box == NULL) {
+        for (; i < BOX_NAME_SIZE+4; i++) {
+            buffer[i] = '\0';
+        }
+        buffer[i++] = '|';
+        for (; i < BOX_NAME_SIZE+9; i++) {
+            buffer[i] = '\0';
+        }
+        buffer[i++] = '|';
+        buffer[i++] = '\0';
+        buffer[i++] = '|';
+        for (; i < BOX_NAME_SIZE+16; i++) {
+            buffer[i] = '\0';
+        }
+    } else {
+        for (; i < BOX_NAME_SIZE+3 && box->name[i-2] != '\0'; i++) {
+            buffer[i] = box->name[i-2];
+        }
+        for (; i < BOX_NAME_SIZE+4; i++) {
+            buffer[i] = '\0';
+        }
+        buffer[i++] = '|';
+        int j = 0;
+        char aux_buffer[5];
+        sprintf(aux_buffer, "%ld", box->size);
+        for (; i < BOX_NAME_SIZE+9; i++) {
+            buffer[i] = aux_buffer[j++];
+        }
+        buffer[i++] = '|';
+        buffer[i++] = (char) box->n_publishers+'0';
+        buffer[i++] = '|';
+        j = 0;
+        sprintf(aux_buffer, "%ld", box->n_subscribers);
+        for (; i < BOX_NAME_SIZE+16; i++) {
+            buffer[i] = aux_buffer[j++];
         }
     }
-    for (; i < ERROR_MESSAGE_SIZE+4; i++) {
-        buffer[i] = '\0';
-    }
 
-
-    //box_feedback(buffer, operation, code, message);
-    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
+    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(BOX_NAME_SIZE+17));
     if (bytes_written < 0) {
         fputs(buffer, stdout);
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
@@ -533,10 +546,10 @@ int list_boxes() {
         if (strcmp("", boxes[i].name)) {
             count++;
             if (count == n_boxes) {
-                send_box_manager(client_named_pipe_path, '1', box[i]);
+                send_box_manager(client_named_pipe_path, '1', &boxes[i]);
                 break;
             }
-            send_box_manager(client_named_pipe_path, '0', box[i]);
+            send_box_manager(client_named_pipe_path, '0', &boxes[i]);
         }
     }
     
@@ -600,8 +613,8 @@ int main(int argc, char **argv) {
                 remove_box();
                 break;
             case OP_CODE_BOX_LIST:
-                list_boxes();
                 printf("BOX_LIST: ");
+                list_boxes();                
                 break;
             case OP_CODE_PUB_MSG:
                 printf("MESSAGE_FROM_PUBLISHER: ");

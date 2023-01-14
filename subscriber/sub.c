@@ -33,17 +33,17 @@ void create_register(char *buffer) {
     char *aux_box_name = box_name;
     buffer[i++] = '2';
     buffer[i++] = '|';
-    for (; i < PIPE_NAME_SIZE && *aux_pipe_name != '\0'; i++) {
+    for (; i < PIPE_NAME_SIZE+1 && *aux_pipe_name != '\0'; i++) {
         buffer[i] = *aux_pipe_name++;
     }
-    for (; i < PIPE_NAME_SIZE+1; i++) {
+    for (; i < PIPE_NAME_SIZE+2; i++) {
         buffer[i] = '\0';
     }
     buffer[i++] = '|';
-    for (; i < PIPE_PLUS_BOX_SIZE+1 && *aux_box_name != '\0'; i++) {
+    for (; i < PIPE_PLUS_BOX_SIZE+2 && *aux_box_name != '\0'; i++) {
         buffer[i] = *aux_box_name++;
     }
-    for (; i < PIPE_PLUS_BOX_SIZE+2; i++) {
+    for (; i < PIPE_PLUS_BOX_SIZE+3; i++) {
         buffer[i] = '\0';
     }
 }
