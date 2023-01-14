@@ -1,5 +1,6 @@
 #include "logging.h"
 #include "config.h"
+#include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -21,6 +22,13 @@ enum {
     CODE_BOX_LIST = '7',
     CODE_BOX_LIST_R = '8'
 };
+
+typedef struct {
+    char name[BOX_NAME_SIZE];
+    uint64_t size;
+    uint64_t n_publishers;
+    uint64_t n_subscribers;
+} box_t;
 
 void create_register(char *buffer) {
     int i = 0;

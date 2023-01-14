@@ -23,8 +23,6 @@ enum {
     OP_CODE_SUB_MSG = '0'
 };
 
-pthread_t threads;
-
 typedef struct {
     char name[BOX_NAME_SIZE];
     uint64_t size;
@@ -40,6 +38,7 @@ typedef struct {
     pthread_cond_t cond;
 } worker_t;
 
+pthread_t threads;
 int n_boxes = 0;
 worker_t *workers;
 box_t *boxes;
