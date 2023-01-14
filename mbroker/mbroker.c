@@ -1,5 +1,6 @@
 #include "logging.h"
 #include "operations.h"
+#include "producer-consumer.h"
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -48,6 +49,9 @@ static int max_sessions;
 
 void destroy_server(int status) {
     /* free(workers); */
+
+    //free the queue pointer TO DO && pcq_destroy
+
     free(boxes);
     close(register_pipe);
     if (unlink(register_pipe_name) != 0 && errno != ENOENT) {
@@ -90,6 +94,9 @@ static void sig_handler(int sig) {
 
 int init_server() {
     /* workers = malloc(sizeof(worker_t)*(unsigned int) max_sessions); */
+    
+    //alloc the queue pointer TO DO && pcq_create
+
     boxes = malloc(sizeof(box_t)*(unsigned int) max_sessions);
     for (int i = 0; i < max_sessions; i++) {
        /*  workers[i].session_id = i;
