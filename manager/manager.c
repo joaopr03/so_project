@@ -8,12 +8,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-static char *register_pipe_name;
-static char *pipe_name;
-static char *box_name;
-static char mode;
-static int named_pipe;
-
 typedef struct {
     char name[BOX_NAME_SIZE];
     uint64_t size;
@@ -21,7 +15,13 @@ typedef struct {
     uint64_t n_subscribers;
 } box_t;
 
-int n_boxes = 0;
+static char *register_pipe_name;
+static char *pipe_name;
+static char *box_name;
+static char mode;
+static int named_pipe;
+static box_t *boxes;
+static int n_boxes = 0;
 
 enum {
     CODE_BOX_CREATE = '3',
@@ -58,16 +58,16 @@ void create_register(char *buffer) {
     }
 }
 
-/* int cmpBoxes(int a, int b) {
-  return (strcmp(box[a].name, box[b].name) > 0);
+int cmpBoxes(int a, int b) {
+  return (strcmp(boxes[a].name, boxes[b].name) > 0);
 }
 
-void bubbleSort(int indexes[], int size, int (*cmpFunc) (int a, int b)) {
+void bubbleSort(int indexes[], int (*cmpFunc) (int a, int b)) {
   int i, j, done;
   
-  for (i = 0; i < size-1; i++){
+  for (i = 0; i < n_boxes-1; i++){
     done=1;
-    for (j = size-1; j > i; j--) 
+    for (j = n_boxes-1; j > i; j--) 
     	if ((*cmpFunc)(indexes[j-1], indexes[j])) {
 			int aux = indexes[j];
 			indexes[j] = indexes[j-1];
@@ -76,7 +76,7 @@ void bubbleSort(int indexes[], int size, int (*cmpFunc) (int a, int b)) {
     	}
     if (done) break;
   }
-} */
+}
 
 int main(int argc, char **argv) {
     if (argc < 4) {
@@ -134,7 +134,7 @@ int main(int argc, char **argv) {
     case CODE_BOX_CREATE: case CODE_BOX_REMOVE:
         buffer = (char*) malloc(sizeof(char)*(PIPE_PLUS_BOX_SIZE+3));
         create_register(buffer);
-        bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+2));
+        bytes_written = write(register_pipe, buffer, sizeof(char)*(PIPE_PLUS_BOX_SIZE+3));
         if (bytes_written < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
             unlink(pipe_name);
@@ -164,10 +164,13 @@ int main(int argc, char **argv) {
                     fprintf(stdout, "OK\n");
                     break;
                 default:
-                    for (int i = 5; i < ERROR_MESSAGE_SIZE+5 && buffer[i] != '\0'; i++) {
+                    int i = 5;
+                    for (; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
                         error_message[i-5] = buffer[i];
                     }
-                    error_message[ERROR_MESSAGE_SIZE-1] = '\0';
+                    for (; i < ERROR_MESSAGE_SIZE+5; i++) {
+                        error_message[i-5] = '\0';
+                    }
                     fprintf(stdout, "ERROR %s\n", error_message);
                     break;
                 }
@@ -206,10 +209,9 @@ int main(int argc, char **argv) {
         }
 
         free(buffer);
-        box_t *boxes = malloc(sizeof(box_t)*5);
+        boxes = malloc(sizeof(box_t)*5);
         buffer = (char*) malloc(sizeof(char)*(BOX_NAME_SIZE+17));
         int box_index = 0;
-        printf("%d\n", n_boxes);
         while (true) {
             ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(BOX_NAME_SIZE+17));
             if (bytes_read > 0) {
@@ -217,6 +219,7 @@ int main(int argc, char **argv) {
                     fprintf(stdout, "NO BOXES FOUND\n");
                     break;
                 }
+
                 n_boxes++;
                 if (n_boxes%5 == 0) {
                     boxes = realloc(boxes, sizeof(box_t)*(unsigned int)(n_boxes+5));
@@ -224,16 +227,12 @@ int main(int argc, char **argv) {
                 for (int i = 4; i < BOX_NAME_SIZE+4; i++) {
                     boxes[box_index].name[i-4] = buffer[i];
                 }
-                /* printf("%s\n", buffer);
-                printf("%s\n", boxes[box_index].name); */
                 char aux[5];
-                for (int i = 4; i < 9; i++) {
-                    aux[i-4] = buffer[BOX_NAME_SIZE+i];
+                for (int i = 5; i < 9; i++) {
+                    aux[i-5] = buffer[BOX_NAME_SIZE+i];
                 }
                 aux[4] = '\0';
-                printf("%s\n", aux);
                 sscanf(aux, "%zu", &boxes[box_index].size);
-                printf("%zu\n", boxes[box_index].size);
                 boxes[box_index].n_publishers = (uint64_t) (buffer[BOX_NAME_SIZE+10] - '0');
                 for (int i = 12; i < 16; i++) {
                     aux[i-12] = buffer[BOX_NAME_SIZE+i];
@@ -244,24 +243,23 @@ int main(int argc, char **argv) {
 
             } else if (bytes_read < 0) {
                 fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                free(buffer);
-                unlink(pipe_name);
-                return EXIT_FAILURE;
+                break;
+
             } else {
-                /* if (n_boxes == 0) {
-                    fprintf(stdout, "NO BOXES FOUND\n");
-                    break;
-                } */
+                int indexes[n_boxes];
                 for(int i = 0; i < n_boxes; i++) {
-                    fprintf(stdout, "%s %zu %zu %zu\n", boxes[i].name, boxes[i].size, boxes[i].n_publishers, boxes[i].n_subscribers);
+                    indexes[i] = i;
+                }
+                bubbleSort(indexes, cmpBoxes);
+                for(int i = 0; i < n_boxes; i++) {
+                    fprintf(stdout, "%s %zu %zu %zu\n", boxes[indexes[i]].name, boxes[indexes[i]].size,
+                                        boxes[indexes[i]].n_publishers, boxes[indexes[i]].n_subscribers);
                 }
                 break;
             }
         }
         free(buffer);
-        if (n_boxes != 0) {
-            free(boxes);
-        }
+        free(boxes);
         unlink(pipe_name);
         return 0;
     default:
