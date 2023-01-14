@@ -14,6 +14,15 @@ static char *box_name;
 static char mode;
 static int named_pipe;
 
+typedef struct {
+    char name[BOX_NAME_SIZE];
+    uint64_t size;
+    uint64_t n_publishers;
+    uint64_t n_subscribers;
+} box_t;
+
+int n_boxes = 0;
+
 enum {
     CODE_BOX_CREATE = '3',
     CODE_BOX_CREATE_R = '4',
@@ -22,13 +31,6 @@ enum {
     CODE_BOX_LIST = '7',
     CODE_BOX_LIST_R = '8'
 };
-
-typedef struct {
-    char name[BOX_NAME_SIZE];
-    uint64_t size;
-    uint64_t n_publishers;
-    uint64_t n_subscribers;
-} box_t;
 
 void create_register(char *buffer) {
     int i = 0;
@@ -204,24 +206,67 @@ int main(int argc, char **argv) {
         }
 
         free(buffer);
+        box_t *boxes = malloc(sizeof(box_t)*5);
         buffer = (char*) malloc(sizeof(char)*(BOX_NAME_SIZE+17));
+        int box_index = 0;
+        printf("%d\n", n_boxes);
         while (true) {
             ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(BOX_NAME_SIZE+17));
             if (bytes_read > 0) {
-                printf("NIGGER\n");
+                if (buffer[2] == '1' && buffer[4] == '\0') {
+                    fprintf(stdout, "NO BOXES FOUND\n");
+                    break;
+                }
+                n_boxes++;
+                if (n_boxes%5 == 0) {
+                    boxes = realloc(boxes, sizeof(box_t)*(unsigned int)(n_boxes+5));
+                }
+                for (int i = 4; i < BOX_NAME_SIZE+4; i++) {
+                    boxes[box_index].name[i-4] = buffer[i];
+                }
+                /* printf("%s\n", buffer);
+                printf("%s\n", boxes[box_index].name); */
+                char aux[5];
+                for (int i = 4; i < 9; i++) {
+                    aux[i-4] = buffer[BOX_NAME_SIZE+i];
+                }
+                aux[4] = '\0';
+                printf("%s\n", aux);
+                sscanf(aux, "%zu", &boxes[box_index].size);
+                printf("%zu\n", boxes[box_index].size);
+                boxes[box_index].n_publishers = (uint64_t) (buffer[BOX_NAME_SIZE+10] - '0');
+                for (int i = 12; i < 16; i++) {
+                    aux[i-12] = buffer[BOX_NAME_SIZE+i];
+                }
+                aux[4] = '\0';
+                sscanf(aux, "%zu", &boxes[box_index].n_subscribers);
+                box_index++;
 
             } else if (bytes_read < 0) {
                 fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
                 free(buffer);
                 unlink(pipe_name);
                 return EXIT_FAILURE;
-            } else break;
+            } else {
+                /* if (n_boxes == 0) {
+                    fprintf(stdout, "NO BOXES FOUND\n");
+                    break;
+                } */
+                for(int i = 0; i < n_boxes; i++) {
+                    fprintf(stdout, "%s %zu %zu %zu\n", boxes[i].name, boxes[i].size, boxes[i].n_publishers, boxes[i].n_subscribers);
+                }
+                break;
+            }
         }
         free(buffer);
+        if (n_boxes != 0) {
+            free(boxes);
+        }
         unlink(pipe_name);
         return 0;
     default:
         unlink(pipe_name);
         return EXIT_FAILURE;
     }
+    return 0;
 }

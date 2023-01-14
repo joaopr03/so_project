@@ -24,13 +24,6 @@ enum {
 };
 
 typedef struct {
-    char name[BOX_NAME_SIZE];
-    uint64_t size;
-    uint64_t n_publishers;
-    uint64_t n_subscribers;
-} box_t;
-
-typedef struct {
     int session_id;
     bool to_execute;
     pthread_t tid;
@@ -38,8 +31,16 @@ typedef struct {
     pthread_cond_t cond;
 } worker_t;
 
-pthread_t threads;
+typedef struct {
+    char name[BOX_NAME_SIZE];
+    uint64_t size;
+    uint64_t n_publishers;
+    uint64_t n_subscribers;
+} box_t;
+
 int n_boxes = 0;
+
+pthread_t threads;
 worker_t *workers;
 box_t *boxes;
 static int register_pipe;
@@ -402,6 +403,8 @@ int send_box_manager(const char *pipe_path, char last, box_t *box) {
         return -1;
     }
 
+    fprintf(stdout, "%s %zu %zu %zu\n", box->name, box->size, box->n_publishers, box->n_subscribers);
+
     char buffer[BOX_NAME_SIZE+17];
     int i = 0;
     buffer[i++] = OP_CODE_BOX_LIST_R;
@@ -423,8 +426,8 @@ int send_box_manager(const char *pipe_path, char last, box_t *box) {
             buffer[i] = '\0';
         }
     } else {
-        for (; i < BOX_NAME_SIZE+3 && box->name[i-2] != '\0'; i++) {
-            buffer[i] = box->name[i-2];
+        for (; i < BOX_NAME_SIZE+3 && box->name[i-4] != '\0'; i++) {
+            buffer[i] = box->name[i-4];
         }
         for (; i < BOX_NAME_SIZE+4; i++) {
             buffer[i] = '\0';
@@ -433,11 +436,14 @@ int send_box_manager(const char *pipe_path, char last, box_t *box) {
         int j = 0;
         char aux_buffer[5];
         sprintf(aux_buffer, "%ld", box->size);
+        fprintf(stdout, "%s\n", aux_buffer);
         for (; i < BOX_NAME_SIZE+9; i++) {
             buffer[i] = aux_buffer[j++];
         }
         buffer[i++] = '|';
-        buffer[i++] = (char) box->n_publishers+'0';
+        if (box->n_publishers == 0)
+            buffer[i++] = '0';
+        else buffer[i++] = '1';
         buffer[i++] = '|';
         j = 0;
         sprintf(aux_buffer, "%ld", box->n_subscribers);
@@ -456,6 +462,7 @@ int send_box_manager(const char *pipe_path, char last, box_t *box) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return -1;
     }
+    fprintf(stdout, "%s %zu %zu %zu\n", box->name, box->size, box->n_publishers, box->n_subscribers);
     return 0;
 }
 
@@ -483,6 +490,11 @@ int create_box() {
         return -1;
     }
 
+    if (n_boxes == max_sessions) {
+        send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, -1,"create_box: No boxes");
+        return -1;
+    }
+
     for (int i = 0; i < max_sessions; i++) {
         if (!strcmp("",boxes[i].name)) {
             n_boxes++;
@@ -491,7 +503,7 @@ int create_box() {
         }
     }
     send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, 0, "");
-    fprintf(stdout, "OK\n");
+    fprintf(stdout, "OK %d\n", n_boxes);
     return 0;
 }
 
@@ -525,7 +537,7 @@ int remove_box() {
         }
     }
     send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, 0, "");
-    fprintf(stdout, "OK\n");
+    fprintf(stdout, "OK %d\n", n_boxes);
     return 0;
 }
 
@@ -552,7 +564,7 @@ int list_boxes() {
         }
     }
     
-    fprintf(stdout, "OK\n");
+    fprintf(stdout, "OK %d\n", n_boxes);
     return 0;
 }
 
