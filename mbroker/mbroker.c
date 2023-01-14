@@ -575,7 +575,50 @@ int list_boxes() {
     return 0;
 }
 
+
+/* void *main_thread_func(void *arg) {
+    pcq_create()
+    return NULL;
+}
+
+void *thread2_func(void *arg) {
+    
+    return NULL;
+}
+
+void *thread3_func(void *arg) {
+    
+    return NULL;
+}                                                                                   CONTINUO SEM SABER SE É ISSO
+
+void *thread4_func(void *arg) {
+    
+    return NULL;
+}
+
+void *thread5_func(void *arg) {
+    
+    return NULL;
+}
+ */
+
 int main(int argc, char **argv) {
+    
+    /* pthread_t thread1, thread2, thread3, thread4, thread5;
+
+    pthread_create(&thread1, NULL, thread1_func, NULL);
+    pthread_create(&thread2, NULL, thread2_func, NULL);
+    pthread_create(&thread3, NULL, thread3_func, NULL);
+    pthread_create(&thread4, NULL, thread4_func, NULL);
+    pthread_create(&thread5, NULL, thread5_func, NULL);
+                                                                                  IDK SE É SUPOSTO FAZER ISSO
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+    pthread_join(thread3, NULL);
+    pthread_join(thread4, NULL);
+    pthread_join(thread5, NULL); */
+    
+    
     if (argc < 3) {
         fprintf(stdout, "ERROR %s\n", "mbroker: need more arguments\n");
         return EXIT_SUCCESS;
@@ -632,10 +675,7 @@ int main(int argc, char **argv) {
                 break;
             case OP_CODE_BOX_LIST:
                 printf("BOX_LIST: ");
-                list_boxes();                
-                break;
-            case OP_CODE_PUB_MSG:
-                printf("MESSAGE_FROM_PUBLISHER: ");
+                list_boxes();
                 break;
             default:
                 printf("SWITCH CASE DOES NOT WORK\n");

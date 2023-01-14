@@ -163,7 +163,8 @@ int main(int argc, char **argv) {
                 case '0':
                     fprintf(stdout, "OK\n");
                     break;
-                default:
+                default: 
+                    {
                     int i = 5;
                     for (; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
                         error_message[i-5] = buffer[i];
@@ -173,6 +174,7 @@ int main(int argc, char **argv) {
                     }
                     fprintf(stdout, "ERROR %s\n", error_message);
                     break;
+                    }
                 }
                 free(buffer);
                 unlink(pipe_name);
