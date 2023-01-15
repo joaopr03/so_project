@@ -115,6 +115,9 @@ int init_server() {
         boxes[i].n_publishers = 0;
         strcpy(boxes[i].name, "");
         boxes[i].size = 0;
+        if (pthread_cond_init(&boxes[i].wait_for_write, NULL) != 0) {
+            return -1;
+        }
     }
     if (pthread_mutex_init(&free_worker_lock, NULL) != 0) {
         return -1;

@@ -52,6 +52,7 @@ typedef struct {
     uint64_t size;
     uint64_t n_publishers;
     uint64_t n_subscribers;
+    pthread_cond_t wait_for_write;
 } box_t;
 
 void destroy_server(int status);
