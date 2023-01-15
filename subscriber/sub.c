@@ -12,6 +12,7 @@ static char *register_pipe_name;
 static char *pipe_name;
 static char *box_name;
 static int named_pipe;
+static int messages_received = 0;
 
 static void sig_handler(int sig) {
     if (sig == SIGINT) {
@@ -22,6 +23,7 @@ static void sig_handler(int sig) {
         if (unlink(pipe_name) != 0 && errno != ENOENT) {
             fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         }
+        fprintf(stdout, "Received %d messages\n", messages_received);
         fprintf(stderr, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }
@@ -126,6 +128,7 @@ int main(int argc, char **argv) {
                 message_buffer[i] = message[i+3];
             }
             fprintf(stdout, "%s\n", message_buffer);
+            messages_received++;
         } else if (bytes_read == 0) {}
         
         else {

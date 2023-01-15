@@ -25,7 +25,19 @@ enum {
 };
 
 typedef struct {
+    char opcode;
+    char client_pipe[PIPE_NAME_SIZE];
+    char file_name[MAX_FILE_NAME];
+    int flags;
+    int fhandle;
+    size_t len;
+    char *buffer;
+} packet_t;
+
+typedef struct {
     int session_id;
+    packet_t packet;
+    int pipe_out;
     bool to_execute;
     pthread_t tid;
     pthread_mutex_t lock;
@@ -275,7 +287,7 @@ int start_publisher() {
             }
         }
         else if (bytes_read == 0) {
-            int fhandle = tfs_open(box_name, 0);
+            /* int fhandle = tfs_open(box_name, 0);
             while (tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE) > 0) {//print...
                 int count = 0;                                  
                 for (int j = 0; j < P_S_MESSAGE_SIZE; j++) {
@@ -284,9 +296,9 @@ int start_publisher() {
                         if (count == 2) break;
                         putchar('\n');
                     } else { count = 0; putchar(buffer[j]);}    //...para debug
-                }
+                } 
             }
-            tfs_close(fhandle);
+            tfs_close(fhandle);*/
             boxes[box_index].n_publishers--;
             fprintf(stdout, "Sucessfully ended publisher\n");
             return 0;
@@ -303,6 +315,7 @@ int start_subscriber() {
     char client_named_pipe_path[PIPE_NAME_SIZE];
     char box_name[BOX_NAME_SIZE];
     int named_pipe;
+    size_t bytes_processed = 0;
 
     int box_index;
     if ((box_index = register_entry(client_named_pipe_path, box_name)) < 0) {
@@ -336,18 +349,23 @@ int start_subscriber() {
 
     ssize_t bytes_written;
     ssize_t bytes_read;
-    int fhandle = tfs_open(box_name, 0);
     char message_buffer[P_S_MESSAGE_SIZE+3];
     while (true) {
         char buffer[P_S_MESSAGE_SIZE];
         int i = 0;
+        int count = 0;
+        int fhandle = tfs_open(box_name, 0);
         while (true) {
             char aux_char;
             bytes_read = tfs_read(fhandle, &aux_char, sizeof(char));
+            count++;
             if (bytes_read <= 0) break;
-            buffer[i++] = aux_char;
-            if (aux_char == '\0') break;
+            if (bytes_processed < count) {
+                buffer[i++] = aux_char;
+                if (aux_char == '\0') break;
+            }
         }
+        bytes_processed = (size_t)count*sizeof(char);
         
         if (bytes_read < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to read box");
@@ -368,11 +386,12 @@ int start_subscriber() {
                 return EXIT_FAILURE;
             }
         }
+        if (tfs_close(fhandle) != 0) {
+            fprintf(stdout, "ERROR %s\n", "Failed to close file");
+            return EXIT_FAILURE;
+        } 
     }
-    if (tfs_close(fhandle) != 0) {
-        fprintf(stdout, "ERROR %s\n", "Failed to close file");
-        return EXIT_FAILURE;
-    }  
+
     if (close(named_pipe) < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to close pipe");
         return EXIT_FAILURE;
@@ -587,6 +606,28 @@ void *thread5_func(void *arg) {
     return NULL;
 }
  */
+int session_id = 0;
+void function(int parser_fn(worker_t*), char op_code) {
+    worker_t *worker = &workers[session_id++];
+    pthread_mutex_lock(&worker->lock);
+    worker->packet.opcode = op_code;
+
+    int result = 0;
+    if (parser_fn != NULL) {
+        result = parser_fn(worker);
+    }
+
+    if (result == 0) {
+        worker->to_execute = true;
+        if (pthread_cond_signal(&worker->cond) != 0) {
+            perror("Couldn't signal worker");
+        }
+    } else {
+        perror("Failed to execute worker");
+    }
+
+    pthread_mutex_unlock(&worker->lock);
+}
 
 int main(int argc, char **argv) {
 
@@ -627,7 +668,7 @@ int main(int argc, char **argv) {
     signal(SIGINT, sig_handler);
 
     ssize_t bytes_read;
-    uint8_t op_code;
+    char op_code;
     while(true) {
         register_pipe = open(register_pipe_name, O_RDONLY);
         if (register_pipe < 0) {
@@ -644,23 +685,28 @@ int main(int argc, char **argv) {
             switch (op_code) {
             case OP_CODE_PUBLISHER:
                 printf("PUBLISHER: ");
-                start_publisher();
+                //start_publisher();
+                function(start_publisher, op_code);
                 break;
             case OP_CODE_SUBSCRIBER:
                 printf("SUBSCRIBER: ");
-                start_subscriber();
+                //start_subscriber();
+                function(start_subscriber, op_code);
                 break;
             case OP_CODE_BOX_CREATE:
                 printf("BOX_CREATE: ");
-                create_box();
+                //create_box();
+                function(create_box, op_code);
                 break;
             case OP_CODE_BOX_REMOVE:
                 printf("BOX_REMOVE: ");
-                remove_box();
+                //remove_box();
+                function(remove_box, op_code);
                 break;
             case OP_CODE_BOX_LIST:
                 printf("BOX_LIST: ");
-                list_boxes();
+                //list_boxes();
+                function(list_boxes, op_code);
                 break;
             default:
                 printf("SWITCH CASE DOES NOT WORK\n");
