@@ -233,7 +233,6 @@ int start_publisher() {
 
     char message_buffer[P_S_MESSAGE_SIZE+3];
     if ((named_pipe = open(client_named_pipe_path, O_RDONLY)) < 0) {
-        fprintf(stdout, "%s\n", client_named_pipe_path);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return EXIT_FAILURE;
     }
@@ -252,13 +251,10 @@ int start_publisher() {
                 fprintf(stdout, "ERROR %s\n", "Failed to write box");
                 tfs_close(fhandle);
                 return EXIT_FAILURE;
-            } /* else if (bytes_written == 0) { //if 0 bytes written remove file contents
-                tfs_close(fhandle);
-                fhandle = tfs_open(box_name, TFS_O_TRUNC);
-                tfs_write(fhandle, buffer, (size_t) bytes_read-3);
-            } */
+            }
+
             boxes[box_index].size += (uint64_t) bytes_written;
-            printf("%s\n", buffer);
+            //printf("%s\n", buffer); //print para debug
             if (tfs_close(fhandle) != 0) {
                 fprintf(stdout, "ERROR %s\n", "Failed to close file");
                 return EXIT_FAILURE;
@@ -317,10 +313,9 @@ int start_subscriber() {
         return EXIT_FAILURE;
     }
     boxes[box_index].n_subscribers++;
-    fprintf(stdout, "Sucessfully created subscribers\n");
+    fprintf(stdout, "Sucessfully created subscriber\n");
 
     if ((named_pipe = open(client_named_pipe_path, O_WRONLY)) < 0) {
-        fprintf(stdout, "%s\n", client_named_pipe_path);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return EXIT_FAILURE;
     }
@@ -495,7 +490,7 @@ int create_box() {
         }
     }
     send_message_manager(client_named_pipe_path, OP_CODE_BOX_CREATE_R, 0, "");
-    fprintf(stdout, "OK %d\n", n_boxes);
+    fprintf(stdout, "OK\n");
     return 0;
 }
 
@@ -529,7 +524,7 @@ int remove_box() {
         }
     }
     send_message_manager(client_named_pipe_path, OP_CODE_BOX_REMOVE_R, 0, "");
-    fprintf(stdout, "OK %d\n", n_boxes);
+    fprintf(stdout, "OK\n");
     return 0;
 }
 
@@ -554,7 +549,7 @@ int list_boxes() {
             send_box_manager(client_named_pipe_path, '0', &boxes[i]);
         }
     }
-    fprintf(stdout, "OK %d\n", n_boxes);
+    fprintf(stdout, "OK\n");
     return 0;
 }
 
@@ -587,7 +582,6 @@ void *thread5_func(void *arg) {
 
 
 
-//int session_id = 0;
 void function(int parser_fn(worker_t*), char op_code) {
     int session_id = -1;
     for (int i = 0; i < max_sessions; i++) {
@@ -596,11 +590,13 @@ void function(int parser_fn(worker_t*), char op_code) {
             break;
         }
     }
-    if (session_id < 0) {perror("FODASSSSSSSsSE");}
+    if (session_id < 0) {
+        fprintf(stdout, "ERROR %s\n", "No sessions left");
+    }
 
     worker_t *worker = &workers[session_id];
 
-    pcq_enqueue(queue, worker);
+    pcq_enqueue(&queue, worker);
     
     pthread_mutex_lock(&worker->lock);
     
@@ -613,10 +609,10 @@ void function(int parser_fn(worker_t*), char op_code) {
     if (result == 0) {
         worker->to_execute = true;
         if (pthread_cond_signal(&worker->cond) != 0) {
-            perror("Couldn't signal worker");
+            fprintf(stdout, "ERROR %s\n", "Couldn't signal worker");
         }
     } else {
-        perror("Failed to execute worker");
+        fprintf(stdout, "ERROR %s\n", "Failed to execute worker");
     }
 
     pthread_mutex_unlock(&worker->lock);
@@ -677,32 +673,32 @@ int main(int argc, char **argv) {
         while (bytes_read > 0) {
             switch (op_code) {
             case OP_CODE_PUBLISHER:
-                printf("PUBLISHER: ");
+                //printf("PUBLISHER: ");
                 //start_publisher();
                 function(NULL, op_code);
                 break;
             case OP_CODE_SUBSCRIBER:
-                printf("SUBSCRIBER: ");
+                //printf("SUBSCRIBER: ");
                 //start_subscriber();
                 function(NULL, op_code);
                 break;
             case OP_CODE_BOX_CREATE:
-                printf("BOX_CREATE: ");
+                //printf("BOX_CREATE: ");
                 //create_box();
                 function(NULL, op_code);
                 break;
             case OP_CODE_BOX_REMOVE:
-                printf("BOX_REMOVE: ");
+                //printf("BOX_REMOVE: ");
                 //remove_box();
                 function(NULL, op_code);
                 break;
             case OP_CODE_BOX_LIST:
-                printf("BOX_LIST: ");
+                //printf("BOX_LIST: ");
                 //list_boxes();
                 function(NULL, op_code);
                 break;
             default:
-                printf("SWITCH CASE DOES NOT WORK\n");
+                printf("SWITCH CASE DOES NOT WORK\n"); //print para debug
                 break;
             }
 

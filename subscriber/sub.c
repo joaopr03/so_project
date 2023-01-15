@@ -29,7 +29,7 @@ static void sig_handler(int sig) {
             fprintf(stdout, "Received %d messages\n", messages_received);
         }
         
-        fprintf(stderr, "Ended successfully\n");
+        fprintf(stdout, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }
 }
@@ -110,13 +110,12 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     if (strcmp(aux_buffer, "OK")) {
-        printf("NIGGA\n");
+        printf("Failed to create subscriber\n");
         unlink(pipe_name);
         return -1;
     }
 
     if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
-        fprintf(stdout, "%s\n", pipe_name);
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         unlink(pipe_name);
         return EXIT_FAILURE;

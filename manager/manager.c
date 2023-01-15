@@ -147,7 +147,6 @@ int main(int argc, char **argv) {
         }
 
         if ((named_pipe = open(pipe_name, O_RDONLY)) < 0) {
-            fprintf(stdout, "%s\n", pipe_name);
             fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
             unlink(pipe_name);
             return EXIT_FAILURE;
