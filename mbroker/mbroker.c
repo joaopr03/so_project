@@ -61,7 +61,7 @@ void *session_worker(void *args) {
         }
         pcq_dequeue(&queue);
 
-        switch (worker->packet.opcode) {
+        switch (worker->opcode) {
         case OP_CODE_PUBLISHER:
             start_publisher();
             break;
@@ -609,7 +609,7 @@ void function(int parser_fn(worker_t*), char op_code) {
     
     pthread_mutex_lock(&worker->lock);
     
-    worker->packet.opcode = op_code;
+    worker->opcode = op_code;
     int result = 0;
     if (parser_fn != NULL) {
         result = parser_fn(worker);

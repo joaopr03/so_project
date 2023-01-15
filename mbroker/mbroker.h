@@ -29,18 +29,7 @@ enum {
 
 typedef struct {
     char opcode;
-    char client_pipe[PIPE_NAME_SIZE];
-    char box_name[BOX_NAME_SIZE];
-    int flags;
-    int fhandle;
-    size_t len;
-    char *buffer;
-} packet_t;
-
-typedef struct {
     int session_id;
-    packet_t packet;
-    int pipe_out;
     bool to_execute;
     pthread_t tid;
     pthread_mutex_t lock;
