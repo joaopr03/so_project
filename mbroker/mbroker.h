@@ -24,15 +24,13 @@ enum {
     OP_CODE_BOX_REMOVE = '5',
     OP_CODE_BOX_REMOVE_R = '6',
     OP_CODE_BOX_LIST = '7',
-    OP_CODE_BOX_LIST_R = '8',
-    OP_CODE_PUB_MSG = '9',
-    OP_CODE_SUB_MSG = '0'
+    OP_CODE_BOX_LIST_R = '8'
 };
 
 typedef struct {
     char opcode;
     char client_pipe[PIPE_NAME_SIZE];
-    char file_name[MAX_FILE_NAME];
+    char box_name[BOX_NAME_SIZE];
     int flags;
     int fhandle;
     size_t len;
