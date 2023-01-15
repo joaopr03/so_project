@@ -154,35 +154,29 @@ int main(int argc, char **argv) {
         }
 
         free(buffer);
-        buffer = (char*) malloc(sizeof(char)*(ERROR_MESSAGE_SIZE+5));
+        char error_message[ERROR_MESSAGE_SIZE];
         while (true) {
-            ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
+            char aux;
+            int return_code;
+            ssize_t bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &return_code, sizeof(int32_t));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, error_message, sizeof(char)*ERROR_MESSAGE_SIZE);
             if (bytes_read == 0) {
-                char error_message[ERROR_MESSAGE_SIZE];
-                switch (buffer[2]) {
-                case '0':
+                switch (return_code) {
+                case EXIT_SUCCESS:
                     fprintf(stdout, "OK\n");
                     break;
-                default: 
-                    {
-                    int i = 5;
-                    for (; i < ERROR_MESSAGE_SIZE+4 && buffer[i] != '\0'; i++) {
-                        error_message[i-5] = buffer[i];
-                    }
-                    for (; i < ERROR_MESSAGE_SIZE+5; i++) {
-                        error_message[i-5] = '\0';
-                    }
+                default:
                     fprintf(stdout, "ERROR %s\n", error_message);
                     break;
-                    }
                 }
-                free(buffer);
                 unlink(pipe_name);
                 return 0;
 
             } else if (bytes_read < 0) {
                 fprintf(stderr, "[ERR]: read failed: %s\n", strerror(errno));
-                free(buffer);
                 unlink(pipe_name);
                 return EXIT_FAILURE;
             }
@@ -212,12 +206,28 @@ int main(int argc, char **argv) {
 
         free(buffer);
         boxes = malloc(sizeof(box_t)*5);
-        buffer = (char*) malloc(sizeof(char)*(BOX_NAME_SIZE+17));
         int box_index = 0;
         while (true) {
-            ssize_t bytes_read = read(named_pipe, buffer, sizeof(char)*(BOX_NAME_SIZE+17));
+            char aux;
+            char last;
+            char name[BOX_NAME_SIZE];
+            uint64_t size;
+            uint64_t publishers;
+            uint64_t subscribers;
+            ssize_t bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &last, sizeof(char));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, name, sizeof(char)*BOX_NAME_SIZE);
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &size, sizeof(uint64_t));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &publishers, sizeof(uint64_t));
+            bytes_read = read(named_pipe, &aux, sizeof(char));
+            bytes_read = read(named_pipe, &subscribers, sizeof(uint64_t));
+
             if (bytes_read > 0) {
-                if (buffer[2] == '1' && buffer[4] == '\0') {
+                if (last == '1' && name[0] == '\0') {
                     fprintf(stdout, "NO BOXES FOUND\n");
                     break;
                 }
@@ -226,21 +236,10 @@ int main(int argc, char **argv) {
                 if (n_boxes%5 == 0) {
                     boxes = realloc(boxes, sizeof(box_t)*(unsigned int)(n_boxes+5));
                 }
-                for (int i = 4; i < BOX_NAME_SIZE+4; i++) {
-                    boxes[box_index].name[i-4] = buffer[i];
-                }
-                char aux[5];
-                for (int i = 5; i < 9; i++) {
-                    aux[i-5] = buffer[BOX_NAME_SIZE+i];
-                }
-                aux[4] = '\0';
-                sscanf(aux, "%zu", &boxes[box_index].size);
-                boxes[box_index].n_publishers = (uint64_t) (buffer[BOX_NAME_SIZE+10] - '0');
-                for (int i = 12; i < 16; i++) {
-                    aux[i-12] = buffer[BOX_NAME_SIZE+i];
-                }
-                aux[4] = '\0';
-                sscanf(aux, "%zu", &boxes[box_index].n_subscribers);
+                strcpy(boxes[box_index].name, name);
+                boxes[box_index].size = size;
+                boxes[box_index].n_publishers = publishers;
+                boxes[box_index].n_subscribers = subscribers;
                 box_index++;
 
             } else if (bytes_read < 0) {
@@ -260,7 +259,6 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        free(buffer);
         free(boxes);
         unlink(pipe_name);
         return 0;

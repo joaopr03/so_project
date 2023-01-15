@@ -4,7 +4,6 @@
 
 int pcq_create(pc_queue_t *queue, size_t capacity) {
     queue->pcq_capacity = capacity;
-    queue->pcq_buffer = malloc(capacity);
     queue->pcq_current_size = 0;
     queue->pcq_head = 0;
     queue->pcq_tail = 0;
@@ -35,10 +34,9 @@ int pcq_create(pc_queue_t *queue, size_t capacity) {
 
 int pcq_destroy(pc_queue_t *queue) {
     queue->pcq_capacity = 0;
-    for (size_t i = 0; i < queue->current_size ; i++) {
+    for (size_t i = 0; i < queue->pcq_current_size ; i++) {
         free(queue->pcq_buffer[i]);
     }
-    free(queue->pcq_buffer);
     queue->pcq_current_size = 0;
     if (pthread_mutex_destroy(&queue->pcq_current_size_lock) != 0) {
         return -1;

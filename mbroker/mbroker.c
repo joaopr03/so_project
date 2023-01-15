@@ -40,18 +40,17 @@ typedef struct {
 } box_t;
 
 static int n_boxes = 0;
-/* static pthread_t threads;
-static worker_t *workers; */
+static worker_t *workers;
+static bool *free_workers;
+static pthread_mutex_t free_worker_lock;
 box_t *boxes;
 static int register_pipe;
 static char *register_pipe_name;
 static int max_sessions;
+static pc_queue_t queue;
 
 void destroy_server(int status) {
-    /* free(workers); */
-
-    //free the queue pointer TO DO && pcq_destroy
-
+    
     free(boxes);
     close(register_pipe);
     if (unlink(register_pipe_name) != 0 && errno != ENOENT) {
@@ -62,6 +61,16 @@ void destroy_server(int status) {
         fprintf(stdout, "ERROR %s\n", "Failed to destroy tfs\n");
         exit(EXIT_FAILURE);
     }
+    if (pcq_destroy(&queue) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to destroy queue\n");
+        exit(EXIT_FAILURE);
+    }
+    if (pthread_mutex_destroy(&free_worker_lock) != 0) {
+        exit(EXIT_FAILURE);
+    }
+    free(queue.pcq_buffer);
+    free(free_workers);
+    free(workers);
     printf("\nSuccessfully ended the server.\n");
     exit(status);
 }
@@ -72,7 +81,7 @@ static void sig_handler(int sig) {
     }
 }
 
-/* void *session_worker(void *args) {
+void *session_worker(void *args) {
     worker_t *worker = (worker_t*)args;
     while (true) {
         if (pthread_mutex_lock(&worker->lock) != 0) {
@@ -85,21 +94,32 @@ static void sig_handler(int sig) {
                 destroy_server(EXIT_FAILURE);
             }
         }
+
+
+
+
+
+
+
         worker->to_execute = false;
         if (pthread_mutex_unlock(&worker->lock) != 0) {
             exit(EXIT_FAILURE);
         }
     }
-} */
+}
 
 int init_server() {
-    /* workers = malloc(sizeof(worker_t)*(unsigned int) max_sessions); */
+    workers = malloc(sizeof(worker_t)*(unsigned int) max_sessions);
     
-    //alloc the queue pointer TO DO && pcq_create
-
+    queue.pcq_buffer = malloc((unsigned int) max_sessions);
+    if (pcq_create(&queue, (size_t) max_sessions) != 0) {
+        fprintf(stdout, "ERROR %s\n", "Failed to create queue\n");
+        return EXIT_FAILURE;
+    }
+    free_workers = malloc(sizeof(bool)*(unsigned int) max_sessions);
     boxes = malloc(sizeof(box_t)*(unsigned int) max_sessions);
     for (int i = 0; i < max_sessions; i++) {
-       /*  workers[i].session_id = i;
+        workers[i].session_id = i;
         workers[i].to_execute = false;
         if (pthread_mutex_init(&workers[i].lock, NULL) != 0) {
             return -1;
@@ -109,11 +129,16 @@ int init_server() {
         }
         if (pthread_create(&workers[i].tid, NULL, session_worker, &workers[i]) != 0) {
             return -1;
-        } */
+        }
+        free_workers[i] = false;
+
         boxes[i].n_subscribers = 0;
         boxes[i].n_publishers = 0;
         strcpy(boxes[i].name, "");
         boxes[i].size = 0;
+    }
+    if (pthread_mutex_init(&free_worker_lock, NULL) != 0) {
+        return -1;
     }
     if (tfs_init(NULL) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to init tfs\n");
@@ -128,7 +153,6 @@ int process_entry(char *client, char *box) {
     bytes_read = read(register_pipe, client, PIPE_NAME_SIZE*sizeof(char));
     if (bytes_read < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
-        destroy_server(EXIT_FAILURE);
         return -1;
     }
     client[PIPE_NAME_SIZE-1] = '\0';
@@ -139,36 +163,10 @@ int process_entry(char *client, char *box) {
     bytes_read = read(register_pipe, box, BOX_NAME_SIZE*sizeof(char));
     if (bytes_read < 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
-        destroy_server(EXIT_FAILURE);
         return -1;
     }
     box[BOX_NAME_SIZE-1] = '\0';
     return 0;
-}
-
-void box_feedback(char *buffer, char box_operation, int32_t return_code, char *error_message) {
-    int i = 0;
-    buffer[i++] = box_operation;
-    buffer[i++] = '|';
-    switch (return_code) {
-    case EXIT_SUCCESS:
-        buffer[i++] = '0';
-        buffer[i++] = '\0';
-        break;
-    default:
-        buffer[i++] = '-';
-        buffer[i++] = '1';
-        break;
-    }
-    buffer[i++] = '|';
-    if (return_code != 0) {
-        for (; i < ERROR_MESSAGE_SIZE+4 && *error_message != '\0'; i++) {
-            buffer[i] = *error_message++;
-        }
-    }
-    for (; i < ERROR_MESSAGE_SIZE+5; i++) {
-        buffer[i] = '\0';
-    }
 }
 
 void create_message(char *new_buffer, char *message) {
@@ -278,14 +276,14 @@ int start_publisher() {
         }
         else if (bytes_read == 0) {
             int fhandle = tfs_open(box_name, 0);
-            while (tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE) > 0) {
-                int count = 0;
+            while (tfs_read(fhandle, buffer, P_S_MESSAGE_SIZE) > 0) {//print...
+                int count = 0;                                  
                 for (int j = 0; j < P_S_MESSAGE_SIZE; j++) {
                     if (buffer[j] == '\0') {
                         count++;
                         if (count == 2) break;
                         putchar('\n');
-                    } else { count = 0; putchar(buffer[j]);}
+                    } else { count = 0; putchar(buffer[j]);}    //...para debug
                 }
             }
             tfs_close(fhandle);
@@ -363,7 +361,6 @@ int start_subscriber() {
         }
         
         if (bytes_read != 0) {
-            printf("NIGGER: %s\n", buffer);
             create_message(message_buffer, buffer);
             bytes_written = write(named_pipe, message_buffer, sizeof(char)*(P_S_MESSAGE_SIZE+3));
             if (bytes_written < 0) {
@@ -391,12 +388,21 @@ int send_message_manager(const char *pipe_path, char operation, int32_t code, ch
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return -1;
     }
+    int i = (int) strlen(message);
+    char error_message[ERROR_MESSAGE_SIZE];
+    strcpy(error_message, message);
+    for (; i < ERROR_MESSAGE_SIZE; i++) {
+        error_message[i] = '\0';
+    }
 
-    char buffer[ERROR_MESSAGE_SIZE+5];
-    box_feedback(buffer, operation, code, message);
-    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(ERROR_MESSAGE_SIZE+5));
+    ssize_t bytes_written = write(named_pipe, &operation, sizeof(char));
+    bytes_written = write(named_pipe, "|", sizeof(char));
+    bytes_written = write(named_pipe, &code, sizeof(int32_t));
+    bytes_written = write(named_pipe, "|", sizeof(char));
+    bytes_written = write(named_pipe, message, sizeof(char)*ERROR_MESSAGE_SIZE);
+
     if (bytes_written < 0) {
-        fputs(buffer, stdout);
+        fputs(error_message, stdout);
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
         return -1;
     }
@@ -413,54 +419,36 @@ int send_box_manager(const char *pipe_path, char last, box_t *box) {
         fprintf(stdout, "ERROR %s\n", "Failed to open pipe");
         return -1;
     }
-
-    char buffer[BOX_NAME_SIZE+17];
+    char buffer[4];
     int i = 0;
     buffer[i++] = OP_CODE_BOX_LIST_R;
     buffer[i++] = '|';
     buffer[i++] = last;
     buffer[i++] = '|';
-    if (box == NULL) {
-        for (; i < BOX_NAME_SIZE+4; i++) {
-            buffer[i] = '\0';
-        }
-        buffer[i++] = '|';
-        for (; i < BOX_NAME_SIZE+9; i++) {
-            buffer[i] = '\0';
-        }
-        buffer[i++] = '|';
-        buffer[i++] = '\0';
-        buffer[i++] = '|';
-        for (; i < BOX_NAME_SIZE+16; i++) {
-            buffer[i] = '\0';
-        }
-    } else {
-        for (; i < BOX_NAME_SIZE+3 && box->name[i-4] != '\0'; i++) {
-            buffer[i] = box->name[i-4];
-        }
-        for (; i < BOX_NAME_SIZE+4; i++) {
-            buffer[i] = '\0';
-        }
-        buffer[i++] = '|';
-        int j = 0;
-        char aux_buffer[5];
-        sprintf(aux_buffer, "%zu", box->size);
-        for (; i < BOX_NAME_SIZE+9; i++) {
-            buffer[i] = aux_buffer[j++];
-        }
-        buffer[i++] = '|';
-        if (box->n_publishers == 0)
-            buffer[i++] = '0';
-        else buffer[i++] = '1';
-        buffer[i++] = '|';
-        j = 0;
-        sprintf(aux_buffer, "%zu", box->n_subscribers);
-        for (; i < BOX_NAME_SIZE+16; i++) {
-            buffer[i] = aux_buffer[j++];
-        }
-    }
+    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*4);
 
-    ssize_t bytes_written = write(named_pipe, buffer, sizeof(char)*(BOX_NAME_SIZE+17));
+    if (box == NULL) {
+        char box_name[BOX_NAME_SIZE];
+        for (i = 0; i < BOX_NAME_SIZE; i++) {
+            box_name[i] = '\0';
+        }
+        uint64_t aux = 0;
+        bytes_written = write(named_pipe, box_name, sizeof(char)*BOX_NAME_SIZE);
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &aux, sizeof(uint64_t));
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &aux, sizeof(uint64_t));
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &aux, sizeof(uint64_t));
+    } else {
+        bytes_written = write(named_pipe, &box->name, sizeof(char)*BOX_NAME_SIZE);
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &box->size, sizeof(uint64_t));
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &box->n_publishers, sizeof(uint64_t));
+        bytes_written = write(named_pipe, "|", sizeof(char));
+        bytes_written = write(named_pipe, &box->n_subscribers, sizeof(uint64_t));
+    }
     if (bytes_written < 0) {
         fputs(buffer, stdout);
         fprintf(stdout, "ERROR %s\n", "Failed to write pipe");
@@ -555,7 +543,6 @@ int list_boxes() {
         fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
         return -1;
     }
-
     if (n_boxes == 0) {
         send_box_manager(client_named_pipe_path, '1', NULL);
     }
@@ -570,7 +557,6 @@ int list_boxes() {
             send_box_manager(client_named_pipe_path, '0', &boxes[i]);
         }
     }
-    
     fprintf(stdout, "OK %d\n", n_boxes);
     return 0;
 }
@@ -603,7 +589,7 @@ void *thread5_func(void *arg) {
  */
 
 int main(int argc, char **argv) {
-    
+
     /* pthread_t thread1, thread2, thread3, thread4, thread5;
 
     pthread_create(&thread1, NULL, thread1_func, NULL);
@@ -617,8 +603,7 @@ int main(int argc, char **argv) {
     pthread_join(thread3, NULL);
     pthread_join(thread4, NULL);
     pthread_join(thread5, NULL); */
-    
-    
+
     if (argc < 3) {
         fprintf(stdout, "ERROR %s\n", "mbroker: need more arguments\n");
         return EXIT_SUCCESS;
