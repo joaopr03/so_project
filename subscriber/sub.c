@@ -23,7 +23,12 @@ static void sig_handler(int sig) {
         if (unlink(pipe_name) != 0 && errno != ENOENT) {
             fprintf(stdout, "ERROR unlink(%s) failed:\n", pipe_name);
         }
-        fprintf(stdout, "Received %d messages\n", messages_received);
+        if (messages_received == 1) {
+            fprintf(stdout, "Received %d message\n", messages_received);
+        } else {
+            fprintf(stdout, "Received %d messages\n", messages_received);
+        }
+        
         fprintf(stderr, "Ended successfully\n");
         exit(EXIT_SUCCESS);
     }

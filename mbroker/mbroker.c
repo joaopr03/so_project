@@ -1,55 +1,4 @@
-#include "logging.h"
-#include "operations.h"
-#include "producer-consumer.h"
-#include <stdint.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <string.h>
-#include <pthread.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <signal.h>
-
-enum {
-    OP_CODE_PUBLISHER = '1',
-    OP_CODE_SUBSCRIBER = '2',
-    OP_CODE_BOX_CREATE = '3',
-    OP_CODE_BOX_CREATE_R = '4',
-    OP_CODE_BOX_REMOVE = '5',
-    OP_CODE_BOX_REMOVE_R = '6',
-    OP_CODE_BOX_LIST = '7',
-    OP_CODE_BOX_LIST_R = '8',
-    OP_CODE_PUB_MSG = '9',
-    OP_CODE_SUB_MSG = '0'
-};
-
-typedef struct {
-    char opcode;
-    char client_pipe[PIPE_NAME_SIZE];
-    char file_name[MAX_FILE_NAME];
-    int flags;
-    int fhandle;
-    size_t len;
-    char *buffer;
-} packet_t;
-
-typedef struct {
-    int session_id;
-    packet_t packet;
-    int pipe_out;
-    bool to_execute;
-    pthread_t tid;
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
-} worker_t;
-
-typedef struct {
-    char name[BOX_NAME_SIZE];
-    uint64_t size;
-    uint64_t n_publishers;
-    uint64_t n_subscribers;
-} box_t;
+#include "mbroker.h"
 
 static int n_boxes = 0;
 static worker_t *workers;
@@ -60,6 +9,7 @@ static int register_pipe;
 static char *register_pipe_name;
 static int max_sessions;
 static pc_queue_t queue;
+pthread_mutex_t register_pipe_lock;
 
 void destroy_server(int status) {
     
@@ -78,6 +28,9 @@ void destroy_server(int status) {
         exit(EXIT_FAILURE);
     }
     if (pthread_mutex_destroy(&free_worker_lock) != 0) {
+        exit(EXIT_FAILURE);
+    }
+    if (pthread_mutex_destroy(&register_pipe_lock) != 0) {
         exit(EXIT_FAILURE);
     }
     free(queue.pcq_buffer);
@@ -107,11 +60,25 @@ void *session_worker(void *args) {
             }
         }
 
-
-
-
-
-
+        switch (worker->packet.opcode) {
+        case OP_CODE_PUBLISHER:
+            start_publisher();
+            break;
+        case OP_CODE_SUBSCRIBER:
+            start_subscriber();
+            break;
+        case OP_CODE_BOX_CREATE:
+            create_box();
+            break;
+        case OP_CODE_BOX_REMOVE:
+            remove_box();
+            break;
+        case OP_CODE_BOX_LIST:
+            list_boxes();
+            break;
+        default:
+            break;
+        }
 
         worker->to_execute = false;
         if (pthread_mutex_unlock(&worker->lock) != 0) {
@@ -152,6 +119,9 @@ int init_server() {
     if (pthread_mutex_init(&free_worker_lock, NULL) != 0) {
         return -1;
     }
+    if (pthread_mutex_init(&register_pipe_lock, NULL) != 0) {
+        return -1;
+    }
     if (tfs_init(NULL) != 0) {
         fprintf(stdout, "ERROR %s\n", "Failed to init tfs\n");
         return EXIT_FAILURE;
@@ -169,7 +139,12 @@ int process_entry(char *client, char *box) {
     }
     client[PIPE_NAME_SIZE-1] = '\0';
 
-    if (box == NULL) return 0;
+    if (box == NULL) {
+        if (pthread_mutex_unlock(&register_pipe_lock) != 0) {
+            return -1;
+        }
+        return 0;
+    }
     bytes_read = read(register_pipe, &aux, sizeof(char)); //read the "|"
 
     bytes_read = read(register_pipe, box, BOX_NAME_SIZE*sizeof(char));
@@ -178,6 +153,9 @@ int process_entry(char *client, char *box) {
         return -1;
     }
     box[BOX_NAME_SIZE-1] = '\0';
+    if (pthread_mutex_unlock(&register_pipe_lock) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -360,12 +338,12 @@ int start_subscriber() {
             bytes_read = tfs_read(fhandle, &aux_char, sizeof(char));
             count++;
             if (bytes_read <= 0) break;
-            if (bytes_processed < count) {
+            if (bytes_processed <= count) {
                 buffer[i++] = aux_char;
-                if (aux_char == '\0') break;
+                if (aux_char == '\0' && bytes_processed < count) break;
             }
         }
-        bytes_processed = (size_t)count*sizeof(char);
+        bytes_processed = (size_t) count*sizeof(char);
         
         if (bytes_read < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to read box");
@@ -606,17 +584,32 @@ void *thread5_func(void *arg) {
     return NULL;
 }
  */
-int session_id = 0;
-void function(int parser_fn(worker_t*), char op_code) {
-    worker_t *worker = &workers[session_id++];
-    pthread_mutex_lock(&worker->lock);
-    worker->packet.opcode = op_code;
 
+
+
+//int session_id = 0;
+void function(int parser_fn(worker_t*), char op_code) {
+    int session_id = -1;
+    for (int i = 0; i < max_sessions; i++) {
+        if (!workers[i].to_execute) {
+            session_id = i;
+            break;
+        }
+    }
+    if (session_id < 0) {perror("FODASSSSSSSsSE");}
+
+    worker_t *worker = &workers[session_id];
+
+    pcq_enqueue(queue, worker);
+    
+    pthread_mutex_lock(&worker->lock);
+    
+    worker->packet.opcode = op_code;
     int result = 0;
     if (parser_fn != NULL) {
         result = parser_fn(worker);
     }
-
+    pthread_mutex_lock(&register_pipe_lock);
     if (result == 0) {
         worker->to_execute = true;
         if (pthread_cond_signal(&worker->cond) != 0) {
@@ -686,36 +679,44 @@ int main(int argc, char **argv) {
             case OP_CODE_PUBLISHER:
                 printf("PUBLISHER: ");
                 //start_publisher();
-                function(start_publisher, op_code);
+                function(NULL, op_code);
                 break;
             case OP_CODE_SUBSCRIBER:
                 printf("SUBSCRIBER: ");
                 //start_subscriber();
-                function(start_subscriber, op_code);
+                function(NULL, op_code);
                 break;
             case OP_CODE_BOX_CREATE:
                 printf("BOX_CREATE: ");
                 //create_box();
-                function(create_box, op_code);
+                function(NULL, op_code);
                 break;
             case OP_CODE_BOX_REMOVE:
                 printf("BOX_REMOVE: ");
                 //remove_box();
-                function(remove_box, op_code);
+                function(NULL, op_code);
                 break;
             case OP_CODE_BOX_LIST:
                 printf("BOX_LIST: ");
                 //list_boxes();
-                function(list_boxes, op_code);
+                function(NULL, op_code);
                 break;
             default:
                 printf("SWITCH CASE DOES NOT WORK\n");
                 break;
             }
 
+            if (pthread_mutex_lock(&register_pipe_lock) != 0) {
+                destroy_server(EXIT_FAILURE);
+            }
+
             do {
                 bytes_read = read(register_pipe, &op_code, sizeof(char));
             } while (bytes_read < 0 && errno == EINTR);
+
+            if (pthread_mutex_unlock(&register_pipe_lock) != 0) {
+                destroy_server(EXIT_FAILURE);
+            }
         }
         if (bytes_read < 0) {
             fprintf(stdout, "ERROR %s\n", "Failed to read pipe");
